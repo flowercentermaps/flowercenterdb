@@ -41,48 +41,49 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyD-2R_B36otoSWY2Viq6pkzBPYg-F3y81A',
-    appId: '1:313464506657:web:3bf36b1334a24da5991660',
-    messagingSenderId: '313464506657',
-    projectId: 'flowercenterdb',
-    authDomain: 'flowercenterdb.firebaseapp.com',
-    storageBucket: 'flowercenterdb.firebasestorage.app',
-    measurementId: 'G-NNJC4CM85F',
+    apiKey: 'AIzaSyDszu6AZdekiBL9ZHk8g0ooB-RU4840Goo',
+    appId: '1:989803453980:web:cc1591327e5542fab0c9d9',
+    messagingSenderId: '989803453980',
+    projectId: 'flower-center-crm',
+    authDomain: 'flower-center-crm.firebaseapp.com',
+    storageBucket: 'flower-center-crm.firebasestorage.app',
+    measurementId: 'G-C9KM33K5TF',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyA8aGIJ3SZPDqAs0YwRLqXjIgQp8WkcmwM',
-    appId: '1:313464506657:android:97e5c2c0ad8f3fd6991660',
-    messagingSenderId: '313464506657',
-    projectId: 'flowercenterdb',
-    storageBucket: 'flowercenterdb.firebasestorage.app',
+    apiKey: 'AIzaSyCWnt6ZACgA7NTXRJRmdoW4U7om0qQ9sHc',
+    appId: '1:989803453980:android:85787ae6d652a90ab0c9d9',
+    messagingSenderId: '989803453980',
+    projectId: 'flower-center-crm',
+    storageBucket: 'flower-center-crm.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyD-VgJIsLsKp6_H9lWUHvSQul3U0duJogc',
-    appId: '1:313464506657:ios:9bf6f7c0c7f8b213991660',
-    messagingSenderId: '313464506657',
-    projectId: 'flowercenterdb',
-    storageBucket: 'flowercenterdb.firebasestorage.app',
-    iosBundleId: 'com.example.flowercenterdb',
+    apiKey: 'AIzaSyASK87b2QfNeHQKI-snfLwVn2RxaFASoQ4',
+    appId: '1:989803453980:ios:98b438122a502625b0c9d9',
+    messagingSenderId: '989803453980',
+    projectId: 'flower-center-crm',
+    storageBucket: 'flower-center-crm.firebasestorage.app',
+    iosBundleId: 'ae.flowercenter.crm',
   );
 
   static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'AIzaSyD-VgJIsLsKp6_H9lWUHvSQul3U0duJogc',
-    appId: '1:313464506657:ios:9bf6f7c0c7f8b213991660',
-    messagingSenderId: '313464506657',
-    projectId: 'flowercenterdb',
-    storageBucket: 'flowercenterdb.firebasestorage.app',
+    apiKey: 'AIzaSyASK87b2QfNeHQKI-snfLwVn2RxaFASoQ4',
+    appId: '1:989803453980:ios:ce724bdb7f648139b0c9d9',
+    messagingSenderId: '989803453980',
+    projectId: 'flower-center-crm',
+    storageBucket: 'flower-center-crm.firebasestorage.app',
     iosBundleId: 'com.example.flowercenterdb',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyD-2R_B36otoSWY2Viq6pkzBPYg-F3y81A',
-    appId: '1:313464506657:web:d4e31bf0b6e60c6c991660',
-    messagingSenderId: '313464506657',
-    projectId: 'flowercenterdb',
-    authDomain: 'flowercenterdb.firebaseapp.com',
-    storageBucket: 'flowercenterdb.firebasestorage.app',
-    measurementId: 'G-WCYMVJ3HXY',
+    apiKey: 'AIzaSyDszu6AZdekiBL9ZHk8g0ooB-RU4840Goo',
+    appId: '1:989803453980:web:12171ced73e22a31b0c9d9',
+    messagingSenderId: '989803453980',
+    projectId: 'flower-center-crm',
+    authDomain: 'flower-center-crm.firebaseapp.com',
+    storageBucket: 'flower-center-crm.firebasestorage.app',
+    measurementId: 'G-VZY36JQWHK',
   );
+
 }

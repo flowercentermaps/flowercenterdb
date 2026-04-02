@@ -41,6 +41,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
 
   List<Map<String, dynamic>> _allLeads = [];
   List<Map<String, dynamic>> _filteredLeads = [];
+  Map<String, Map<String, dynamic>> _profileMap = {};
 
   String _searchQuery = '';
   String? _selectedStatus;
@@ -101,6 +102,57 @@ class _LeadsScreenState extends State<LeadsScreen> {
     return <String, dynamic>{};
   }
 
+  // Future<void> _loadSingleLeadAndUpsert(String leadId) async {
+  //   if (leadId.isEmpty) return;
+  //
+  //   try {
+  //     final response = await _supabase
+  //         .from('leads')
+  //         .select()
+  //         .eq('id', leadId)
+  //         .maybeSingle();
+  //
+  //     if (!mounted) return;
+  //
+  //     if (response == null) {
+  //       setState(() {
+  //         _removeLeadLocally(leadId);
+  //         _applyFilters();
+  //       });
+  //       return;
+  //     }
+  //
+  //     final lead = Map<String, dynamic>.from(response as Map);
+  //     final profileIds = <String>{
+  //       ...rows.map((e) => _text(e['owner_id'])),
+  //       ...rows.map((e) => _text(e['created_by'])),
+  //       ...rows.map((e) => _text(e['assigned_by'])),
+  //     }..removeWhere((e) => e.isEmpty);
+  //
+  //     Map<String, Map<String, dynamic>> profileMap = {};
+  //
+  //     if (profileIds.isNotEmpty) {
+  //       final profilesResponse = await _supabase
+  //           .from('profiles')
+  //           .select('id, full_name, email, role')
+  //           .inFilter('id', profileIds.toList());
+  //
+  //       for (final row in profilesResponse as List) {
+  //         final map = Map<String, dynamic>.from(row as Map);
+  //         final id = _text(map['id']);
+  //         if (id.isNotEmpty) {
+  //           profileMap[id] = map;
+  //         }
+  //       }
+  //     }
+  //
+  //     setState(() {
+  //       _upsertLeadLocally(lead);
+  //     });
+  //   } catch (_) {
+  //     // ignore
+  //   }
+  // }
   Future<void> _loadSingleLeadAndUpsert(String leadId) async {
     if (leadId.isEmpty) return;
 
@@ -123,14 +175,43 @@ class _LeadsScreenState extends State<LeadsScreen> {
 
       final lead = Map<String, dynamic>.from(response as Map);
 
+      final profileIds = <String>{
+        _text(lead['owner_id']),
+        _text(lead['created_by']),
+        _text(lead['assigned_by']),
+      }..removeWhere((e) => e.isEmpty);
+
+      final updatedProfileMap =
+      Map<String, Map<String, dynamic>>.from(_profileMap);
+
+      if (profileIds.isNotEmpty) {
+        final missingIds =
+        profileIds.where((id) => !updatedProfileMap.containsKey(id)).toList();
+
+        if (missingIds.isNotEmpty) {
+          final profilesResponse = await _supabase
+              .from('profiles')
+              .select('id, full_name, email, role')
+              .inFilter('id', missingIds);
+
+          for (final row in profilesResponse as List) {
+            final map = Map<String, dynamic>.from(row as Map);
+            final id = _text(map['id']);
+            if (id.isNotEmpty) {
+              updatedProfileMap[id] = map;
+            }
+          }
+        }
+      }
+
       setState(() {
+        _profileMap = updatedProfileMap;
         _upsertLeadLocally(lead);
       });
     } catch (_) {
       // ignore
     }
   }
-
   Future<void> _handleAssignmentLogRealtime(PostgresChangePayload payload) async {
     if (!mounted || !_isSales || _currentUserId.isEmpty) return;
 
@@ -292,11 +373,34 @@ class _LeadsScreenState extends State<LeadsScreen> {
       final rows = (response as List)
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
+      final profileIds = <String>{
+        ...rows.map((e) => _text(e['owner_id'])),
+        ...rows.map((e) => _text(e['created_by'])),
+        ...rows.map((e) => _text(e['assigned_by'])),
+      }..removeWhere((e) => e.isEmpty);
+
+      Map<String, Map<String, dynamic>> profileMap = {};
+
+      if (profileIds.isNotEmpty) {
+        final profilesResponse = await _supabase
+            .from('profiles')
+            .select('id, full_name, email, role')
+            .inFilter('id', profileIds.toList());
+
+        for (final row in profilesResponse as List) {
+          final map = Map<String, dynamic>.from(row as Map);
+          final id = _text(map['id']);
+          if (id.isNotEmpty) {
+            profileMap[id] = map;
+          }
+        }
+      }
 
       if (!mounted) return;
 
       setState(() {
         _allLeads = rows;
+        _profileMap= profileMap;
         _applyFilters();
         _isLoading = false;
       });
@@ -464,6 +568,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
       builder: (_) {
         return LeadDetailsSheet(
           lead: lead,
+          profileMap: _profileMap,
           canEdit: _canEditLead,
           onEdit: _canEditLead
               ? () async {
@@ -472,6 +577,16 @@ class _LeadsScreenState extends State<LeadsScreen> {
           }
               : null,
         );
+        // return LeadDetailsSheet(
+        //   lead: lead,
+        //   canEdit: _canEditLead,
+        //   onEdit: _canEditLead
+        //       ? () async {
+        //     Navigator.of(context).pop();
+        //     await _openEditLeadDialog(lead);
+        //   }
+        //       : null,
+        // );
       },
     );
   }
@@ -1294,6 +1409,7 @@ class _LeadCard extends StatelessWidget {
                 spacing: 18,
                 runSpacing: 10,
                 children: [
+                  _InfoText(icon: Icons.person, text: name.isEmpty ? 'No phone' : name),
                   _InfoText(icon: Icons.phone_outlined, text: phone.isEmpty ? 'No phone' : phone),
                   _InfoText(icon: Icons.email_outlined, text: email.isEmpty ? 'No email' : email),
                   _InfoText(
@@ -1424,18 +1540,35 @@ class _MiniBadge extends StatelessWidget {
 
 class LeadDetailsSheet extends StatelessWidget {
   final Map<String, dynamic> lead;
+  final Map<String, Map<String, dynamic>> profileMap;
   final bool canEdit;
   final VoidCallback? onEdit;
 
   const LeadDetailsSheet({
     super.key,
     required this.lead,
+    required this.profileMap,
     required this.canEdit,
     this.onEdit,
   });
 
   String _text(dynamic value) => (value ?? '').toString().trim();
 
+  String _profileLabel(String? userId) {
+    final id = _text(userId);
+    if (id.isEmpty) return 'Unassigned';
+
+    final profile = profileMap[id];
+    if (profile == null) return 'Unknown user';
+
+    final fullName = _text(profile['full_name']);
+    final email = _text(profile['email']);
+    final role = _text(profile['role']).toUpperCase();
+
+    if (fullName.isNotEmpty) return '$fullName • $role';
+    if (email.isNotEmpty) return '$email • $role';
+    return 'Unknown user';
+  }
   Widget _row({
     required String label,
     required String value,
@@ -1555,6 +1688,7 @@ class LeadDetailsSheet extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 20),
+              IconButton(onPressed: ()=>print(lead), icon: Icon(Icons.print)),
               _row(label: 'Phone', value: _text(lead['phone'])),
               _row(label: 'Email', value: _text(lead['email'])),
               _row(label: 'Lead Type', value: _text(lead['lead_type']).toUpperCase()),
@@ -1562,8 +1696,12 @@ class LeadDetailsSheet extends StatelessWidget {
               _row(label: 'Company TRN', value: _text(lead['company_trn'])),
               _row(label: 'Status', value: _text(lead['status']).replaceAll('_', ' ').toUpperCase()),
               _row(label: 'Notes', value: _text(lead['notes'])),
-              _row(label: 'Owner ID', value: _text(lead['owner_id'])),
-              _row(label: 'Created By', value: _text(lead['created_by'])),
+              _row(label: 'Owner', value: _profileLabel(lead['owner_id'])),
+              _row(label: 'Created By', value: _profileLabel(lead['created_by'])),
+              _row(label: 'Assigned By', value: _profileLabel(lead['assigned_by'])),
+              // _row(label: 'Owner ID', value: _text(lead['owner_id'])),
+              // _row(label: 'Created By', value: _text(lead['created_by'])),
+              // _row(label: 'Assigned By', value: _text(lead['assigned_by'])),
             ],
           ),
         ),

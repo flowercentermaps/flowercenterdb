@@ -1,4 +1,4 @@
-package com.example.flowercenterdb
+package ae.flowercenter.crm
 
 import io.flutter.embedding.android.FlutterActivity
 
