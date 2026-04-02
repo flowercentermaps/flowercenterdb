@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "313464506657",
+    "project_id": "flowercenterdb",
+    "storage_bucket": "flowercenterdb.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:313464506657:android:97e5c2c0ad8f3fd6991660",
+        "android_client_info": {
+          "package_name": "com.example.flowercenterdb"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA8aGIJ3SZPDqAs0YwRLqXjIgQp8WkcmwM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

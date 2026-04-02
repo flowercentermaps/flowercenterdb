@@ -2,15 +2,18 @@
 // import 'dart:typed_data';
 //
 // import 'package:excel/excel.dart' hide Border;
+// import 'package:flutter/foundation.dart';
 // import 'package:flutter/material.dart';
 // import 'package:flutter/services.dart' show rootBundle;
+// import 'package:image_picker/image_picker.dart';
 // import 'package:open_filex/open_filex.dart';
 // import 'package:path_provider/path_provider.dart';
 // import 'package:pdf/pdf.dart';
-// import 'package:pdf/widgets.dart' as pw;
-// import 'package:printing/printing.dart';
 // import 'package:share_plus/share_plus.dart';
 // import 'package:supabase_flutter/supabase_flutter.dart';
+//
+// import 'quotation_pdf_preview_screen.dart';
+// import 'quotation_pdf_renderer.dart';
 //
 // class QuotationDetailsScreen extends StatefulWidget {
 //   final dynamic quotationId;
@@ -26,18 +29,27 @@
 //
 // class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
 //   final SupabaseClient _supabase = Supabase.instance.client;
+//   final ImagePicker _imagePicker = ImagePicker();
+//
+//   late final QuotationPdfRenderer _quotationPdfRenderer;
 //
 //   bool _isLoading = true;
 //   bool _isExportingXlsx = false;
-//   bool _isExportingPdf = false;
+//   bool _isPreparingPdf = false;
 //   String? _error;
 //
 //   Map<String, dynamic>? _quotation;
 //   List<Map<String, dynamic>> _items = [];
 //
+//   final Map<dynamic, Uint8List> _temporaryItemImages = {};
+//   final Map<dynamic, String> _temporaryItemImageNames = {};
+//
 //   @override
 //   void initState() {
 //     super.initState();
+//     _quotationPdfRenderer = QuotationPdfRenderer(
+//       supabase: _supabase,
+//     );
 //     _loadQuotation();
 //   }
 //
@@ -50,9 +62,20 @@
 //     try {
 //       final quotationResponse = await _supabase
 //           .from('quotations')
-//           .select()
+//           .select('''
+//       *,
+//       created_by_profile:profiles!quotations_created_by_fkey (
+//         id,
+//         full_name,
+//         email,
+//         phone
+//       )
+//     ''')
 //           .eq('id', widget.quotationId)
 //           .single();
+//
+//       final userPhone = quotationResponse['created_by_profile']?['phone'];
+//       print(userPhone);
 //
 //       final itemsResponse = await _supabase
 //           .from('quotation_items')
@@ -64,6 +87,7 @@
 //
 //       setState(() {
 //         _quotation = Map<String, dynamic>.from(quotationResponse as Map);
+//         print(_quotation);
 //         _items = (itemsResponse as List)
 //             .map((e) => Map<String, dynamic>.from(e as Map))
 //             .toList();
@@ -103,6 +127,10 @@
 //     return number.toStringAsFixed(2);
 //   }
 //
+//   String _formatMoneyWithAed(dynamic value) {
+//     return '${_formatMoney(value)} AED';
+//   }
+//
 //   String _formatDate(dynamic value) {
 //     final raw = _text(value);
 //     if (raw.isEmpty) return '';
@@ -118,12 +146,181 @@
 //     return _supabase.storage.from('product-images').getPublicUrl(imagePath);
 //   }
 //
-//   Future<Uint8List?> _downloadImageBytes(String imagePath) async {
+//   bool _canUseCamera() {
+//     if (kIsWeb) return false;
+//     return Platform.isAndroid || Platform.isIOS;
+//   }
+//
+//   Future<void> _pickReplacementImage(
+//       Map<String, dynamic> item, {
+//         required ImageSource source,
+//       }) async {
 //     try {
-//       return await _supabase.storage.from('product-images').download(imagePath);
-//     } catch (_) {
-//       return null;
+//       final picked = await _imagePicker.pickImage(
+//         source: source,
+//         imageQuality: 90,
+//       );
+//
+//       if (picked == null) return;
+//
+//       final bytes = await picked.readAsBytes();
+//       final itemId = item['id'];
+//
+//       if (!mounted) return;
+//
+//       setState(() {
+//         _temporaryItemImages[itemId] = bytes;
+//         _temporaryItemImageNames[itemId] = picked.name;
+//       });
+//
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         const SnackBar(
+//           content: Text('Temporary image applied to this quote item.'),
+//         ),
+//       );
+//     } catch (e) {
+//       if (!mounted) return;
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         SnackBar(content: Text('Image pick failed: $e')),
+//       );
 //     }
+//   }
+//
+//   void _removeReplacementImage(Map<String, dynamic> item) {
+//     final itemId = item['id'];
+//
+//     setState(() {
+//       _temporaryItemImages.remove(itemId);
+//       _temporaryItemImageNames.remove(itemId);
+//     });
+//
+//     ScaffoldMessenger.of(context).showSnackBar(
+//       const SnackBar(content: Text('Temporary image removed.')),
+//     );
+//   }
+//
+//   Future<void> _showImageSourceSheet(Map<String, dynamic> item) async {
+//     await showModalBottomSheet<void>(
+//       context: context,
+//       backgroundColor: const Color(0xFF161616),
+//       builder: (context) {
+//         final itemId = item['id'];
+//         final hasReplacement = _temporaryItemImages.containsKey(itemId);
+//
+//         return SafeArea(
+//           child: Padding(
+//             padding: const EdgeInsets.symmetric(vertical: 8),
+//             child: Column(
+//               mainAxisSize: MainAxisSize.min,
+//               children: [
+//                 ListTile(
+//                   leading: const Icon(Icons.photo_library_outlined),
+//                   title: const Text('Choose from gallery'),
+//                   onTap: () async {
+//                     Navigator.pop(context);
+//                     await _pickReplacementImage(
+//                       item,
+//                       source: ImageSource.gallery,
+//                     );
+//                   },
+//                 ),
+//                 if (_canUseCamera())
+//                   ListTile(
+//                     leading: const Icon(Icons.photo_camera_outlined),
+//                     title: const Text('Take photo'),
+//                     onTap: () async {
+//                       Navigator.pop(context);
+//                       await _pickReplacementImage(
+//                         item,
+//                         source: ImageSource.camera,
+//                       );
+//                     },
+//                   ),
+//                 if (hasReplacement)
+//                   ListTile(
+//                     leading: const Icon(Icons.restore_outlined),
+//                     title: const Text('Use original image'),
+//                     onTap: () {
+//                       Navigator.pop(context);
+//                       _removeReplacementImage(item);
+//                     },
+//                   ),
+//               ],
+//             ),
+//           ),
+//         );
+//       },
+//     );
+//   }
+//
+//   Widget _buildItemPreviewImage(Map<String, dynamic> item, String imagePath) {
+//     final itemId = item['id'];
+//     final tempBytes = _temporaryItemImages[itemId];
+//
+//     Widget child;
+//
+//     if (tempBytes != null) {
+//       child = Image.memory(
+//         tempBytes,
+//         width: 72,
+//         height: 72,
+//         fit: BoxFit.cover,
+//       );
+//     } else if (imagePath.isNotEmpty) {
+//       child = Image.network(
+//         _imageUrlFromPath(imagePath),
+//         width: 72,
+//         height: 72,
+//         fit: BoxFit.cover,
+//         errorBuilder: (_, __, ___) => Container(
+//           width: 72,
+//           height: 72,
+//           color: const Color(0xFF222222),
+//           alignment: Alignment.center,
+//           child: const Icon(Icons.broken_image_outlined),
+//         ),
+//       );
+//     } else {
+//       child = Container(
+//         width: 72,
+//         height: 72,
+//         color: const Color(0xFF222222),
+//         alignment: Alignment.center,
+//         child: const Icon(Icons.image_not_supported_outlined),
+//       );
+//     }
+//
+//     return ClipRRect(
+//       borderRadius: BorderRadius.circular(12),
+//       child: Stack(
+//         children: [
+//           child,
+//           if (tempBytes != null)
+//             Positioned(
+//               right: 4,
+//               top: 4,
+//               child: Container(
+//                 padding: const EdgeInsets.symmetric(
+//                   horizontal: 6,
+//                   vertical: 2,
+//                 ),
+//                 decoration: BoxDecoration(
+//                   color: Colors.black.withOpacity(0.7),
+//                   borderRadius: BorderRadius.circular(8),
+//                 ),
+//                 child: const Text(
+//                   'TEMP',
+//                   style: TextStyle(
+//                     fontSize: 10,
+//                     fontWeight: FontWeight.w700,
+//                     color: Colors.white,
+//                   ),
+//                 ),
+//               ),
+//             ),
+//         ],
+//       ),
+//     );
 //   }
 //
 //   Future<String> _exportToTemplateXlsx() async {
@@ -131,9 +328,7 @@
 //     final templateData =
 //     await rootBundle.load('assets/templates/quotation_template.xlsx');
 //
-//     final excel = Excel.decodeBytes(
-//       templateData.buffer.asUint8List(),
-//     );
+//     final excel = Excel.decodeBytes(templateData.buffer.asUint8List());
 //
 //     final sheetName = excel.tables.keys.contains('Trees & Arrangment')
 //         ? 'Trees & Arrangment'
@@ -182,9 +377,12 @@
 //
 //       setNumber('B$row', i + 1.0);
 //       setText('D$row', _text(item['item_code']));
-//       setText('E$row', _text(item['product_name']).isEmpty
-//           ? _text(item['description'])
-//           : _text(item['product_name']));
+//       setText(
+//         'E$row',
+//         _text(item['product_name']).isEmpty
+//             ? _text(item['description'])
+//             : _text(item['product_name']),
+//       );
 //       setText('F$row', _text(item['length']));
 //       setText('G$row', _text(item['width']));
 //       setText('H$row', _text(item['production_time']));
@@ -213,320 +411,32 @@
 //     return file.path;
 //   }
 //
-//   Future<String> _exportToPdf() async {
-//     final quote = _quotation!;
-//     final pdf = pw.Document();
-//
-//     final List<pw.Widget> itemRows = [];
-//
-//     for (var i = 0; i < _items.length; i++) {
-//       final item = _items[i];
-//       final imagePath = _text(item['image_path']);
-//       pw.Widget imageWidget = pw.SizedBox(
-//         width: 48,
-//         height: 48,
-//       );
-//
-//       if (imagePath.isNotEmpty) {
-//         final bytes = await _downloadImageBytes(imagePath);
-//         if (bytes != null) {
-//           imageWidget = pw.Container(
-//             width: 48,
-//             height: 48,
-//             decoration: pw.BoxDecoration(
-//               border: pw.Border.all(color: PdfColors.grey400, width: 0.5),
-//             ),
-//             child: pw.Image(
-//               pw.MemoryImage(bytes),
-//               fit: pw.BoxFit.cover,
-//             ),
-//           );
-//         }
-//       }
-//
-//       itemRows.add(
-//         pw.Container(
-//           decoration: pw.BoxDecoration(
-//             border: pw.Border(
-//               left: pw.BorderSide(color: PdfColors.grey500, width: 0.5),
-//               right: pw.BorderSide(color: PdfColors.grey500, width: 0.5),
-//               bottom: pw.BorderSide(color: PdfColors.grey500, width: 0.5),
-//             ),
-//           ),
-//           child: pw.Row(
-//             crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-//             children: [
-//               _pdfCell('${i + 1}', width: 24),
-//               _pdfCellWidget(imageWidget, width: 60),
-//               _pdfCell(_text(item['item_code']), width: 52),
-//               _pdfCell(
-//                 _text(item['product_name']).isEmpty
-//                     ? _text(item['description'])
-//                     : _text(item['product_name']),
-//                 width: 150,
-//                 align: pw.TextAlign.left,
-//               ),
-//               _pdfCell(_text(item['length']), width: 40),
-//               _pdfCell(_text(item['width']), width: 40),
-//               _pdfCell(_text(item['production_time']), width: 58),
-//               _pdfCell('${_toInt(item['quantity'])}', width: 32),
-//               _pdfCell(_formatMoney(item['unit_price']), width: 52),
-//               _pdfCell(_formatMoney(item['line_total']), width: 58),
-//             ],
-//           ),
-//         ),
-//       );
+//   Future<Uint8List> _buildQuotationPdfBytes([PdfPageFormat? format]) async {
+//     if (_quotation == null) {
+//       throw Exception('Quotation not loaded.');
 //     }
 //
-//     pdf.addPage(
-//       pw.MultiPage(
-//         pageFormat: PdfPageFormat.a4.landscape,
-//         margin: const pw.EdgeInsets.all(18),
-//         build: (context) => [
-//           pw.Container(
-//             padding: const pw.EdgeInsets.all(10),
-//             decoration: pw.BoxDecoration(
-//               border: pw.Border.all(color: PdfColors.teal700, width: 1),
-//             ),
-//             child: pw.Column(
-//               crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-//               children: [
-//                 pw.Center(
-//                   child: pw.Text(
-//                     'QUOTATION',
-//                     style: pw.TextStyle(
-//                       fontSize: 18,
-//                       fontWeight: pw.FontWeight.bold,
-//                       color: PdfColors.teal700,
-//                     ),
-//                   ),
-//                 ),
-//                 pw.SizedBox(height: 10),
-//                 pw.Row(
-//                   crossAxisAlignment: pw.CrossAxisAlignment.start,
-//                   children: [
-//                     pw.Expanded(
-//                       child: pw.Container(
-//                         padding: const pw.EdgeInsets.all(8),
-//                         decoration: pw.BoxDecoration(
-//                           border: pw.Border.all(
-//                             color: PdfColors.grey600,
-//                             width: 0.8,
-//                           ),
-//                         ),
-//                         child: pw.Column(
-//                           crossAxisAlignment: pw.CrossAxisAlignment.start,
-//                           children: [
-//                             pw.Text('To: ${_text(quote['customer_name'])}'),
-//                             pw.SizedBox(height: 4),
-//                             pw.Text('Company: ${_text(quote['company_name'])}'),
-//                             pw.SizedBox(height: 4),
-//                             pw.Text('TRN: ${_text(quote['customer_trn'])}'),
-//                             pw.SizedBox(height: 4),
-//                             pw.Text('Tel: ${_text(quote['customer_phone'])}'),
-//                           ],
-//                         ),
-//                       ),
-//                     ),
-//                     pw.SizedBox(width: 10),
-//                     pw.Expanded(
-//                       child: pw.Container(
-//                         padding: const pw.EdgeInsets.all(8),
-//                         decoration: pw.BoxDecoration(
-//                           border: pw.Border.all(
-//                             color: PdfColors.grey600,
-//                             width: 0.8,
-//                           ),
-//                         ),
-//                         child: pw.Column(
-//                           crossAxisAlignment: pw.CrossAxisAlignment.start,
-//                           children: [
-//                             pw.Text('Quotation Date: ${_formatDate(quote['quote_date'])}'),
-//                             pw.SizedBox(height: 4),
-//                             pw.Text('Quotation Number: ${_text(quote['quote_no'])}'),
-//                             pw.SizedBox(height: 4),
-//                             pw.Text('Salesperson: ${_text(quote['salesperson_name'])}'),
-//                             pw.SizedBox(height: 4),
-//                             pw.Text('Contact: ${_text(quote['salesperson_contact'])}'),
-//                           ],
-//                         ),
-//                       ),
-//                     ),
-//                   ],
-//                 ),
-//                 pw.SizedBox(height: 12),
-//                 _pdfHeaderRow(),
-//                 ...itemRows,
-//                 pw.Container(
-//                   decoration: pw.BoxDecoration(
-//                     border: pw.Border.all(color: PdfColors.grey600, width: 0.8),
-//                   ),
-//                   padding: const pw.EdgeInsets.all(10),
-//                   child: pw.Row(
-//                     crossAxisAlignment: pw.CrossAxisAlignment.start,
-//                     children: [
-//                       pw.Expanded(
-//                         flex: 3,
-//                         child: pw.Column(
-//                           crossAxisAlignment: pw.CrossAxisAlignment.start,
-//                           children: [
-//                             pw.Text(
-//                               'Terms & Conditions',
-//                               style: pw.TextStyle(
-//                                 fontWeight: pw.FontWeight.bold,
-//                               ),
-//                             ),
-//                             pw.SizedBox(height: 4),
-//                             pw.Text(
-//                               _text(quote['notes']).isEmpty
-//                                   ? 'Thank you for your business.'
-//                                   : _text(quote['notes']),
-//                             ),
-//                           ],
-//                         ),
-//                       ),
-//                       pw.SizedBox(width: 14),
-//                       pw.Expanded(
-//                         flex: 2,
-//                         child: pw.Column(
-//                           children: [
-//                             _pdfSummaryRow('Subtotal', _formatMoney(quote['subtotal'])),
-//                             _pdfSummaryRow('Delivery', _formatMoney(quote['delivery_fee'])),
-//                             _pdfSummaryRow('Installation Work', _formatMoney(quote['installation_fee'])),
-//                             _pdfSummaryRow('Additional Details', _formatMoney(quote['additional_details_fee'])),
-//                             _pdfSummaryRow('Total Taxable', _formatMoney(quote['taxable_total'])),
-//                             _pdfSummaryRow(
-//                               'VAT (${_formatMoney(quote['vat_percent'])}%)',
-//                               _formatMoney(quote['vat_amount']),
-//                             ),
-//                             _pdfSummaryRow(
-//                               'Net Total',
-//                               _formatMoney(quote['net_total']),
-//                               bold: true,
-//                             ),
-//                           ],
-//                         ),
-//                       ),
-//                     ],
-//                   ),
-//                 ),
-//               ],
-//             ),
-//           ),
-//         ],
-//       ),
+//     return _quotationPdfRenderer.build(
+//       quotation: _quotation!,
+//       items: _items,
+//       temporaryItemImages: _temporaryItemImages,
+//       pageFormat: format ?? PdfPageFormat.a4,
 //     );
+//   }
 //
+//   Future<String> _savePdfToFile() async {
+//     if (_quotation == null) {
+//       throw Exception('Quotation not loaded.');
+//     }
+//
+//     final bytes = await _buildQuotationPdfBytes(PdfPageFormat.a4);
 //     final dir = await getApplicationDocumentsDirectory();
-//     final quoteNo = _text(quote['quote_no']).replaceAll('/', '-');
-//     final filePath = '${dir.path}/$quoteNo.pdf';
+//     final quoteNo = _text(_quotation!['quote_no']).replaceAll('/', '-').trim();
+//     final path = '${dir.path}/$quoteNo.pdf';
 //
-//     final file = File(filePath);
-//     await file.writeAsBytes(await pdf.save(), flush: true);
-//
-//     return file.path;
-//   }
-//
-//   pw.Widget _pdfHeaderRow() {
-//     return pw.Container(
-//       decoration: pw.BoxDecoration(
-//         color: PdfColors.teal700,
-//         border: pw.Border.all(color: PdfColors.grey600, width: 0.8),
-//       ),
-//       child: pw.Row(
-//         children: [
-//           _pdfHeaderCell('S.No', width: 24),
-//           _pdfHeaderCell('Picture', width: 60),
-//           _pdfHeaderCell('Item.No', width: 52),
-//           _pdfHeaderCell('Description', width: 150),
-//           _pdfHeaderCell('Length', width: 40),
-//           _pdfHeaderCell('Width', width: 40),
-//           _pdfHeaderCell('Production Time', width: 58),
-//           _pdfHeaderCell('QTY', width: 32),
-//           _pdfHeaderCell('Unit Price', width: 52),
-//           _pdfHeaderCell('Total (AED)', width: 58),
-//         ],
-//       ),
-//     );
-//   }
-//
-//   pw.Widget _pdfHeaderCell(String text, {required double width}) {
-//     return pw.Container(
-//       width: width,
-//       padding: const pw.EdgeInsets.all(6),
-//       alignment: pw.Alignment.center,
-//       child: pw.Text(
-//         text,
-//         textAlign: pw.TextAlign.center,
-//         style: pw.TextStyle(
-//           color: PdfColors.white,
-//           fontSize: 8,
-//           fontWeight: pw.FontWeight.bold,
-//         ),
-//       ),
-//     );
-//   }
-//
-//   pw.Widget _pdfCell(
-//       String text, {
-//         required double width,
-//         pw.TextAlign align = pw.TextAlign.center,
-//       }) {
-//     return pw.Container(
-//       width: width,
-//       padding: const pw.EdgeInsets.all(4),
-//       alignment: align == pw.TextAlign.left
-//           ? pw.Alignment.centerLeft
-//           : pw.Alignment.center,
-//       child: pw.Text(
-//         text,
-//         textAlign: align,
-//         style: const pw.TextStyle(fontSize: 8),
-//       ),
-//     );
-//   }
-//
-//   pw.Widget _pdfCellWidget(
-//       pw.Widget child, {
-//         required double width,
-//       }) {
-//     return pw.Container(
-//       width: width,
-//       padding: const pw.EdgeInsets.all(4),
-//       alignment: pw.Alignment.center,
-//       child: child,
-//     );
-//   }
-//
-//   pw.Widget _pdfSummaryRow(String label, String value, {bool bold = false}) {
-//     return pw.Container(
-//       decoration: pw.BoxDecoration(
-//         border: pw.Border(
-//           bottom: pw.BorderSide(color: PdfColors.grey500, width: 0.5),
-//         ),
-//       ),
-//       padding: const pw.EdgeInsets.symmetric(vertical: 4),
-//       child: pw.Row(
-//         children: [
-//           pw.Expanded(
-//             child: pw.Text(
-//               label,
-//               style: pw.TextStyle(
-//                 fontSize: 9,
-//                 fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-//               ),
-//             ),
-//           ),
-//           pw.Text(
-//             value,
-//             style: pw.TextStyle(
-//               fontSize: 9,
-//               fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-//             ),
-//           ),
-//         ],
-//       ),
-//     );
+//     final file = File(path);
+//     await file.writeAsBytes(bytes, flush: true);
+//     return path;
 //   }
 //
 //   Future<void> _handleExportXlsx() async {
@@ -560,39 +470,52 @@
 //   }
 //
 //   Future<void> _handleExportPdf() async {
-//     if (_quotation == null || _isExportingPdf) return;
+//     if (_quotation == null || _isPreparingPdf) return;
 //
 //     setState(() {
-//       _isExportingPdf = true;
+//       _isPreparingPdf = true;
 //     });
 //
 //     try {
-//       final path = await _exportToPdf();
+//       final quoteNo = _text(_quotation!['quote_no']).isEmpty
+//           ? 'quotation'
+//           : _text(_quotation!['quote_no']);
 //
 //       if (!mounted) return;
-//       ScaffoldMessenger.of(context).showSnackBar(
-//         SnackBar(content: Text('Saved: $path')),
-//       );
 //
-//       await OpenFilex.open(path);
+//       await Navigator.of(context).push(
+//         MaterialPageRoute(
+//           builder: (_) => QuotationPdfPreviewScreen(
+//             quoteNo: quoteNo,
+//             buildPdf: (format) => _buildQuotationPdfBytes(format),
+//           ),
+//         ),
+//       );
 //     } catch (e) {
 //       if (!mounted) return;
 //       ScaffoldMessenger.of(context).showSnackBar(
-//         SnackBar(content: Text('PDF export failed: $e')),
+//         SnackBar(content: Text('PDF preview failed: $e')),
 //       );
 //     } finally {
 //       if (mounted) {
 //         setState(() {
-//           _isExportingPdf = false;
+//           _isPreparingPdf = false;
 //         });
 //       }
 //     }
 //   }
 //
 //   Future<void> _sharePdf() async {
-//     if (_quotation == null) return;
-//     final path = await _exportToPdf();
-//     await Share.shareXFiles([XFile(path)]);
+//     try {
+//       if (_quotation == null) return;
+//       final path = await _savePdfToFile();
+//       await Share.shareXFiles([XFile(path)]);
+//     } catch (e) {
+//       if (!mounted) return;
+//       ScaffoldMessenger.of(context).showSnackBar(
+//         SnackBar(content: Text('Share PDF failed: $e')),
+//       );
+//     }
 //   }
 //
 //   @override
@@ -617,7 +540,7 @@
 //           ),
 //           IconButton(
 //             onPressed: _isLoading ? null : _handleExportPdf,
-//             icon: _isExportingPdf
+//             icon: _isPreparingPdf
 //                 ? const SizedBox(
 //               width: 18,
 //               height: 18,
@@ -671,8 +594,15 @@
 //                 Text('Company: ${_text(quote['company_name'])}'),
 //                 Text('TRN: ${_text(quote['customer_trn'])}'),
 //                 Text('Phone: ${_text(quote['customer_phone'])}'),
-//                 Text('Salesperson: ${_text(quote['salesperson_name'])}'),
-//                 Text('Contact: ${_text(quote['salesperson_contact'])}'),
+//                 Text(
+//                   'Salesperson: ${_text(quote['salesperson_name'])}',
+//                 ),
+//                 Text(
+//                   'Contact: ${_text(quote['salesperson_contact'])}',
+//                 ),
+//                 Text(
+//                   'sales phone: ${_text(quote['salesperson_contact'])}',
+//                 ),
 //                 if (_text(quote['notes']).isNotEmpty) ...[
 //                   const SizedBox(height: 8),
 //                   Text('Notes: ${_text(quote['notes'])}'),
@@ -684,6 +614,8 @@
 //           ...List.generate(_items.length, (index) {
 //             final item = _items[index];
 //             final imagePath = _text(item['image_path']);
+//             final hasTempImage =
+//             _temporaryItemImages.containsKey(item['id']);
 //
 //             return Container(
 //               margin: const EdgeInsets.only(bottom: 12),
@@ -696,22 +628,8 @@
 //               child: Row(
 //                 crossAxisAlignment: CrossAxisAlignment.start,
 //                 children: [
-//                   if (imagePath.isNotEmpty)
-//                     ClipRRect(
-//                       borderRadius: BorderRadius.circular(12),
-//                       child: Image.network(
-//                         _imageUrlFromPath(imagePath),
-//                         width: 72,
-//                         height: 72,
-//                         fit: BoxFit.cover,
-//                         errorBuilder: (_, __, ___) =>
-//                         const SizedBox(
-//                           width: 72,
-//                           height: 72,
-//                         ),
-//                       ),
-//                     ),
-//                   if (imagePath.isNotEmpty) const SizedBox(width: 12),
+//                   _buildItemPreviewImage(item, imagePath),
+//                   const SizedBox(width: 12),
 //                   Expanded(
 //                     child: Column(
 //                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -738,10 +656,50 @@
 //                         Text(
 //                           'Qty: ${_toInt(item['quantity'])} • Unit: ${_formatMoney(item['unit_price'])} • Total: ${_formatMoney(item['line_total'])}',
 //                           style: const TextStyle(
-//                             color: Color(0xFFD4AF37),
+//                             color: AppConstants.primaryColor,
 //                             fontWeight: FontWeight.w700,
 //                           ),
 //                         ),
+//                         const SizedBox(height: 10),
+//                         Wrap(
+//                           spacing: 8,
+//                           runSpacing: 8,
+//                           children: [
+//                             OutlinedButton.icon(
+//                               onPressed: () =>
+//                                   _showImageSourceSheet(item),
+//                               icon: const Icon(
+//                                 Icons.image_outlined,
+//                                 size: 18,
+//                               ),
+//                               label: Text(
+//                                 hasTempImage
+//                                     ? 'Replace temp image'
+//                                     : 'Set temp image',
+//                               ),
+//                             ),
+//                             if (hasTempImage)
+//                               OutlinedButton.icon(
+//                                 onPressed: () =>
+//                                     _removeReplacementImage(item),
+//                                 icon: const Icon(
+//                                   Icons.restore_outlined,
+//                                   size: 18,
+//                                 ),
+//                                 label: const Text('Use original'),
+//                               ),
+//                           ],
+//                         ),
+//                         if (hasTempImage) ...[
+//                           const SizedBox(height: 6),
+//                           Text(
+//                             'PDF override: ${_temporaryItemImageNames[item['id']] ?? 'selected image'}',
+//                             style: const TextStyle(
+//                               fontSize: 12,
+//                               color: AppConstants.primaryColor,
+//                             ),
+//                           ),
+//                         ],
 //                       ],
 //                     ),
 //                   ),
@@ -780,27 +738,35 @@
 //             ),
 //           ),
 //           const SizedBox(height: 16),
-//           Row(
-//             children: [
-//               Expanded(
-//                 child: FilledButton.icon(
-//                   onPressed:
-//                   _isExportingXlsx ? null : _handleExportXlsx,
-//                   icon: const Icon(Icons.table_view_outlined),
-//                   label: const Text('Export XLSX'),
-//                 ),
-//               ),
-//               const SizedBox(width: 12),
-//               Expanded(
-//                 child: FilledButton.icon(
-//                   onPressed:
-//                   _isExportingPdf ? null : _handleExportPdf,
-//                   icon: const Icon(Icons.picture_as_pdf_outlined),
-//                   label: const Text('Export PDF'),
-//                 ),
-//               ),
-//             ],
+//           Expanded(
+//             child: FilledButton.icon(
+//               onPressed:
+//               _isPreparingPdf ? null : _handleExportPdf,
+//               icon: const Icon(Icons.picture_as_pdf_outlined),
+//               label: const Text('Preview PDF'),
+//             ),
 //           ),
+//           // Row(
+//           //   children: [
+//           //     Expanded(
+//           //       child: FilledButton.icon(
+//           //         onPressed:
+//           //         _isExportingXlsx ? null : _handleExportXlsx,
+//           //         icon: const Icon(Icons.table_view_outlined),
+//           //         label: const Text('Export XLSX'),
+//           //       ),
+//           //     ),
+//           //     const SizedBox(width: 12),
+//           //     Expanded(
+//           //       child: FilledButton.icon(
+//           //         onPressed:
+//           //         _isPreparingPdf ? null : _handleExportPdf,
+//           //         icon: const Icon(Icons.picture_as_pdf_outlined),
+//           //         label: const Text('Preview PDF'),
+//           //       ),
+//           //     ),
+//           //   ],
+//           // ),
 //         ],
 //       ),
 //     );
@@ -820,10 +786,10 @@
 //             ),
 //           ),
 //           Text(
-//             '${_formatMoney(value)} AED',
+//             _formatMoneyWithAed(value),
 //             style: TextStyle(
 //               fontWeight: bold ? FontWeight.w900 : FontWeight.w700,
-//               color: bold ? const Color(0xFFD4AF37) : null,
+//               color: bold ? const AppConstants.primaryColor : null,
 //             ),
 //           ),
 //         ],
@@ -837,14 +803,19 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:excel/excel.dart' hide Border;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
+import 'package:image_picker/image_picker.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
-import 'package:pdf/widgets.dart' as pw;
 import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'core/constants/app_constants.dart';
+import 'quotation_pdf_preview_screen.dart';
+import 'quotation_pdf_renderer.dart';
 
 class QuotationDetailsScreen extends StatefulWidget {
   final dynamic quotationId;
@@ -860,21 +831,27 @@ class QuotationDetailsScreen extends StatefulWidget {
 
 class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
   final SupabaseClient _supabase = Supabase.instance.client;
+  final ImagePicker _imagePicker = ImagePicker();
+
+  late final QuotationPdfRenderer _quotationPdfRenderer;
 
   bool _isLoading = true;
   bool _isExportingXlsx = false;
-  bool _isExportingPdf = false;
+  bool _isPreparingPdf = false;
   String? _error;
 
   Map<String, dynamic>? _quotation;
   List<Map<String, dynamic>> _items = [];
 
-  pw.Font? _pdfFont;
-  pw.Font? _pdfFontBold;
+  final Map<dynamic, Uint8List> _temporaryItemImages = {};
+  final Map<dynamic, String> _temporaryItemImageNames = {};
 
   @override
   void initState() {
     super.initState();
+    _quotationPdfRenderer = QuotationPdfRenderer(
+      supabase: _supabase,
+    );
     _loadQuotation();
   }
 
@@ -887,9 +864,26 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
     try {
       final quotationResponse = await _supabase
           .from('quotations')
-          .select()
+          .select('''
+            *,
+            created_by_profile:profiles!quotations_created_by_fkey (
+              id,
+              full_name,
+              email,
+              phone
+            )
+          ''')
           .eq('id', widget.quotationId)
           .single();
+
+      final quotationMap =
+      Map<String, dynamic>.from(quotationResponse as Map);
+
+      final creatorProfile =
+      quotationMap['created_by_profile'] as Map<String, dynamic>?;
+      final creatorPhone = (creatorProfile?['phone'] ?? '').toString().trim();
+
+      quotationMap['creator_phone'] = creatorPhone;
 
       final itemsResponse = await _supabase
           .from('quotation_items')
@@ -900,12 +894,15 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
       if (!mounted) return;
 
       setState(() {
-        _quotation = Map<String, dynamic>.from(quotationResponse as Map);
+        _quotation = quotationMap;
         _items = (itemsResponse as List)
             .map((e) => Map<String, dynamic>.from(e as Map))
             .toList();
         _isLoading = false;
       });
+
+      debugPrint('Creator phone: $creatorPhone');
+      debugPrint('Quotation: $_quotation');
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -913,16 +910,6 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
         _isLoading = false;
       });
     }
-  }
-
-  Future<void> _ensurePdfFonts() async {
-    if (_pdfFont != null && _pdfFontBold != null) return;
-
-    final regular = await rootBundle.load('assets/fonts/NotoSans-Regular.ttf');
-    final bold = await rootBundle.load('assets/fonts/NotoSans-Bold.ttf');
-
-    _pdfFont = pw.Font.ttf(regular);
-    _pdfFontBold = pw.Font.ttf(bold);
   }
 
   double _toDouble(dynamic value) {
@@ -950,6 +937,10 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
     return number.toStringAsFixed(2);
   }
 
+  String _formatMoneyWithAed(dynamic value) {
+    return '${_formatMoney(value)} AED';
+  }
+
   String _formatDate(dynamic value) {
     final raw = _text(value);
     if (raw.isEmpty) return '';
@@ -965,12 +956,181 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
     return _supabase.storage.from('product-images').getPublicUrl(imagePath);
   }
 
-  Future<Uint8List?> _downloadImageBytes(String imagePath) async {
+  bool _canUseCamera() {
+    if (kIsWeb) return false;
+    return Platform.isAndroid || Platform.isIOS;
+  }
+
+  Future<void> _pickReplacementImage(
+      Map<String, dynamic> item, {
+        required ImageSource source,
+      }) async {
     try {
-      return await _supabase.storage.from('product-images').download(imagePath);
-    } catch (_) {
-      return null;
+      final picked = await _imagePicker.pickImage(
+        source: source,
+        imageQuality: 90,
+      );
+
+      if (picked == null) return;
+
+      final bytes = await picked.readAsBytes();
+      final itemId = item['id'];
+
+      if (!mounted) return;
+
+      setState(() {
+        _temporaryItemImages[itemId] = bytes;
+        _temporaryItemImageNames[itemId] = picked.name;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Temporary image applied to this quote item.'),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Image pick failed: $e')),
+      );
     }
+  }
+
+  void _removeReplacementImage(Map<String, dynamic> item) {
+    final itemId = item['id'];
+
+    setState(() {
+      _temporaryItemImages.remove(itemId);
+      _temporaryItemImageNames.remove(itemId);
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Temporary image removed.')),
+    );
+  }
+
+  Future<void> _showImageSourceSheet(Map<String, dynamic> item) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: const Color(0xFF161616),
+      builder: (context) {
+        final itemId = item['id'];
+        final hasReplacement = _temporaryItemImages.containsKey(itemId);
+
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('Choose from gallery'),
+                  onTap: () async {
+                    Navigator.pop(context);
+                    await _pickReplacementImage(
+                      item,
+                      source: ImageSource.gallery,
+                    );
+                  },
+                ),
+                if (_canUseCamera())
+                  ListTile(
+                    leading: const Icon(Icons.photo_camera_outlined),
+                    title: const Text('Take photo'),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await _pickReplacementImage(
+                        item,
+                        source: ImageSource.camera,
+                      );
+                    },
+                  ),
+                if (hasReplacement)
+                  ListTile(
+                    leading: const Icon(Icons.restore_outlined),
+                    title: const Text('Use original image'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      _removeReplacementImage(item);
+                    },
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildItemPreviewImage(Map<String, dynamic> item, String imagePath) {
+    final itemId = item['id'];
+    final tempBytes = _temporaryItemImages[itemId];
+
+    Widget child;
+
+    if (tempBytes != null) {
+      child = Image.memory(
+        tempBytes,
+        width: 72,
+        height: 72,
+        fit: BoxFit.cover,
+      );
+    } else if (imagePath.isNotEmpty) {
+      child = Image.network(
+        _imageUrlFromPath(imagePath),
+        width: 72,
+        height: 72,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(
+          width: 72,
+          height: 72,
+          color: const Color(0xFF222222),
+          alignment: Alignment.center,
+          child: const Icon(Icons.broken_image_outlined),
+        ),
+      );
+    } else {
+      child = Container(
+        width: 72,
+        height: 72,
+        color: const Color(0xFF222222),
+        alignment: Alignment.center,
+        child: const Icon(Icons.image_not_supported_outlined),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Stack(
+        children: [
+          child,
+          if (tempBytes != null)
+            Positioned(
+              right: 4,
+              top: 4,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.7),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'TEMP',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   Future<String> _exportToTemplateXlsx() async {
@@ -978,9 +1138,7 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
     final templateData =
     await rootBundle.load('assets/templates/quotation_template.xlsx');
 
-    final excel = Excel.decodeBytes(
-      templateData.buffer.asUint8List(),
-    );
+    final excel = Excel.decodeBytes(templateData.buffer.asUint8List());
 
     final sheetName = excel.tables.keys.contains('Trees & Arrangment')
         ? 'Trees & Arrangment'
@@ -1063,292 +1221,32 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
     return file.path;
   }
 
-  Future<String> _exportToPdf() async {
-    final quote = _quotation!;
+  Future<Uint8List> _buildQuotationPdfBytes([PdfPageFormat? format]) async {
+    if (_quotation == null) {
+      throw Exception('Quotation not loaded.');
+    }
 
-    await _ensurePdfFonts();
-
-    final pdf = pw.Document(
-      theme: pw.ThemeData.withFont(
-        base: _pdfFont!,
-        bold: _pdfFontBold!,
-      ),
+    return _quotationPdfRenderer.build(
+      quotation: _quotation!,
+      items: _items,
+      temporaryItemImages: _temporaryItemImages,
+      pageFormat: format ?? PdfPageFormat.a4,
     );
-
-    final List<List<String>> tableData = [
-      [
-        'S.No',
-        'Item.No',
-        'Description',
-        'Length',
-        'Width',
-        'Production Time',
-        'QTY',
-        'Unit Price',
-        'Total (AED)',
-      ],
-      ...List.generate(_items.length, (index) {
-        final item = _items[index];
-        return [
-          '${index + 1}',
-          _text(item['item_code']),
-          _text(item['product_name']).isEmpty
-              ? _text(item['description'])
-              : _text(item['product_name']),
-          _text(item['length']),
-          _text(item['width']),
-          _text(item['production_time']),
-          '${_toInt(item['quantity'])}',
-          _formatMoney(item['unit_price']),
-          _formatMoney(item['line_total']),
-        ];
-      }),
-    ];
-
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat.a4.landscape,
-        margin: const pw.EdgeInsets.all(18),
-        build: (context) => [
-          pw.Container(
-            padding: const pw.EdgeInsets.all(10),
-            decoration: pw.BoxDecoration(
-              border: pw.Border.all(color: PdfColors.teal700, width: 1),
-            ),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-              children: [
-                pw.Center(
-                  child: pw.Text(
-                    'QUOTATION',
-                    style: pw.TextStyle(
-                      fontSize: 18,
-                      fontWeight: pw.FontWeight.bold,
-                      color: PdfColors.teal700,
-                    ),
-                  ),
-                ),
-                pw.SizedBox(height: 10),
-                pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Expanded(
-                      child: pw.Container(
-                        padding: const pw.EdgeInsets.all(8),
-                        decoration: pw.BoxDecoration(
-                          border: pw.Border.all(
-                            color: PdfColors.grey600,
-                            width: 0.8,
-                          ),
-                        ),
-                        child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            pw.Text('To: ${_text(quote['customer_name'])}'),
-                            pw.SizedBox(height: 4),
-                            pw.Text('Company: ${_text(quote['company_name'])}'),
-                            pw.SizedBox(height: 4),
-                            pw.Text('TRN: ${_text(quote['customer_trn'])}'),
-                            pw.SizedBox(height: 4),
-                            pw.Text('Tel: ${_text(quote['customer_phone'])}'),
-                          ],
-                        ),
-                      ),
-                    ),
-                    pw.SizedBox(width: 10),
-                    pw.Expanded(
-                      child: pw.Container(
-                        padding: const pw.EdgeInsets.all(8),
-                        decoration: pw.BoxDecoration(
-                          border: pw.Border.all(
-                            color: PdfColors.grey600,
-                            width: 0.8,
-                          ),
-                        ),
-                        child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            pw.Text(
-                              'Quotation Date: ${_formatDate(quote['quote_date'])}',
-                            ),
-                            pw.SizedBox(height: 4),
-                            pw.Text(
-                              'Quotation Number: ${_text(quote['quote_no'])}',
-                            ),
-                            pw.SizedBox(height: 4),
-                            pw.Text(
-                              'Salesperson: ${_text(quote['salesperson_name'])}',
-                            ),
-                            pw.SizedBox(height: 4),
-                            pw.Text(
-                              'Contact: ${_text(quote['salesperson_contact'])}',
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                pw.SizedBox(height: 12),
-                pw.Table.fromTextArray(
-                  headers: tableData.first,
-                  data: tableData.sublist(1),
-                  headerStyle: pw.TextStyle(
-                    fontWeight: pw.FontWeight.bold,
-                    color: PdfColors.white,
-                    fontSize: 8,
-                  ),
-                  headerDecoration: const pw.BoxDecoration(
-                    color: PdfColors.teal700,
-                  ),
-                  cellStyle: const pw.TextStyle(
-                    fontSize: 8,
-                  ),
-                  cellAlignment: pw.Alignment.center,
-                  cellPadding: const pw.EdgeInsets.all(4),
-                  border: pw.TableBorder.all(
-                    color: PdfColors.grey500,
-                    width: 0.5,
-                  ),
-                  columnWidths: {
-                    0: const pw.FixedColumnWidth(26),
-                    1: const pw.FixedColumnWidth(52),
-                    2: const pw.FlexColumnWidth(3),
-                    3: const pw.FixedColumnWidth(42),
-                    4: const pw.FixedColumnWidth(42),
-                    5: const pw.FixedColumnWidth(62),
-                    6: const pw.FixedColumnWidth(34),
-                    7: const pw.FixedColumnWidth(56),
-                    8: const pw.FixedColumnWidth(60),
-                  },
-                ),
-                pw.SizedBox(height: 12),
-                pw.Row(
-                  crossAxisAlignment: pw.CrossAxisAlignment.start,
-                  children: [
-                    pw.Expanded(
-                      flex: 3,
-                      child: pw.Container(
-                        padding: const pw.EdgeInsets.all(10),
-                        decoration: pw.BoxDecoration(
-                          border: pw.Border.all(
-                            color: PdfColors.grey600,
-                            width: 0.8,
-                          ),
-                        ),
-                        child: pw.Column(
-                          crossAxisAlignment: pw.CrossAxisAlignment.start,
-                          children: [
-                            pw.Text(
-                              'Terms & Conditions',
-                              style: pw.TextStyle(
-                                fontWeight: pw.FontWeight.bold,
-                              ),
-                            ),
-                            pw.SizedBox(height: 4),
-                            pw.Text(
-                              _text(quote['notes']).isEmpty
-                                  ? 'Thank you for your business.'
-                                  : _text(quote['notes']),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                    pw.SizedBox(width: 14),
-                    pw.Expanded(
-                      flex: 2,
-                      child: pw.Container(
-                        padding: const pw.EdgeInsets.all(10),
-                        decoration: pw.BoxDecoration(
-                          border: pw.Border.all(
-                            color: PdfColors.grey600,
-                            width: 0.8,
-                          ),
-                        ),
-                        child: pw.Column(
-                          children: [
-                            _pdfSummaryRow(
-                              'Subtotal',
-                              _formatMoney(quote['subtotal']),
-                            ),
-                            _pdfSummaryRow(
-                              'Delivery',
-                              _formatMoney(quote['delivery_fee']),
-                            ),
-                            _pdfSummaryRow(
-                              'Installation Work',
-                              _formatMoney(quote['installation_fee']),
-                            ),
-                            _pdfSummaryRow(
-                              'Additional Details',
-                              _formatMoney(quote['additional_details_fee']),
-                            ),
-                            _pdfSummaryRow(
-                              'Total Taxable',
-                              _formatMoney(quote['taxable_total']),
-                            ),
-                            _pdfSummaryRow(
-                              'VAT (${_formatMoney(quote['vat_percent'])}%)',
-                              _formatMoney(quote['vat_amount']),
-                            ),
-                            _pdfSummaryRow(
-                              'Net Total',
-                              _formatMoney(quote['net_total']),
-                              bold: true,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-
-    final dir = await getApplicationDocumentsDirectory();
-    final quoteNo = _text(quote['quote_no']).replaceAll('/', '-');
-    final filePath = '${dir.path}/$quoteNo.pdf';
-
-    final file = File(filePath);
-    await file.writeAsBytes(await pdf.save(), flush: true);
-
-    return file.path;
   }
 
-  pw.Widget _pdfSummaryRow(String label, String value, {bool bold = false}) {
-    return pw.Container(
-      decoration: pw.BoxDecoration(
-        border: pw.Border(
-          bottom: pw.BorderSide(color: PdfColors.grey500, width: 0.5),
-        ),
-      ),
-      padding: const pw.EdgeInsets.symmetric(vertical: 4),
-      child: pw.Row(
-        children: [
-          pw.Expanded(
-            child: pw.Text(
-              label,
-              style: pw.TextStyle(
-                fontSize: 9,
-                fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-              ),
-            ),
-          ),
-          pw.Text(
-            value,
-            style: pw.TextStyle(
-              fontSize: 9,
-              fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-            ),
-          ),
-        ],
-      ),
-    );
+  Future<String> _savePdfToFile() async {
+    if (_quotation == null) {
+      throw Exception('Quotation not loaded.');
+    }
+
+    final bytes = await _buildQuotationPdfBytes(PdfPageFormat.a4);
+    final dir = await getApplicationDocumentsDirectory();
+    final quoteNo = _text(_quotation!['quote_no']).replaceAll('/', '-').trim();
+    final path = '${dir.path}/$quoteNo.pdf';
+
+    final file = File(path);
+    await file.writeAsBytes(bytes, flush: true);
+    return path;
   }
 
   Future<void> _handleExportXlsx() async {
@@ -1382,30 +1280,36 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
   }
 
   Future<void> _handleExportPdf() async {
-    if (_quotation == null || _isExportingPdf) return;
+    if (_quotation == null || _isPreparingPdf) return;
 
     setState(() {
-      _isExportingPdf = true;
+      _isPreparingPdf = true;
     });
 
     try {
-      final path = await _exportToPdf();
+      final quoteNo = _text(_quotation!['quote_no']).isEmpty
+          ? 'quotation'
+          : _text(_quotation!['quote_no']);
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Saved: $path')),
-      );
 
-      await OpenFilex.open(path);
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => QuotationPdfPreviewScreen(
+            quoteNo: quoteNo,
+            buildPdf: (format) => _buildQuotationPdfBytes(format),
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('PDF export failed: $e')),
+        SnackBar(content: Text('PDF preview failed: $e')),
       );
     } finally {
       if (mounted) {
         setState(() {
-          _isExportingPdf = false;
+          _isPreparingPdf = false;
         });
       }
     }
@@ -1414,7 +1318,7 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
   Future<void> _sharePdf() async {
     try {
       if (_quotation == null) return;
-      final path = await _exportToPdf();
+      final path = await _savePdfToFile();
       await Share.shareXFiles([XFile(path)]);
     } catch (e) {
       if (!mounted) return;
@@ -1446,7 +1350,7 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
           ),
           IconButton(
             onPressed: _isLoading ? null : _handleExportPdf,
-            icon: _isExportingPdf
+            icon: _isPreparingPdf
                 ? const SizedBox(
               width: 18,
               height: 18,
@@ -1502,6 +1406,9 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
                 Text('Phone: ${_text(quote['customer_phone'])}'),
                 Text('Salesperson: ${_text(quote['salesperson_name'])}'),
                 Text('Contact: ${_text(quote['salesperson_contact'])}'),
+                Text(
+                  'Sales phone: ${_text(quote['salesperson_phone']).isNotEmpty ? _text(quote['salesperson_phone']) : _text(quote['creator_phone'])}',
+                ),
                 if (_text(quote['notes']).isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text('Notes: ${_text(quote['notes'])}'),
@@ -1513,6 +1420,8 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
           ...List.generate(_items.length, (index) {
             final item = _items[index];
             final imagePath = _text(item['image_path']);
+            final hasTempImage =
+            _temporaryItemImages.containsKey(item['id']);
 
             return Container(
               margin: const EdgeInsets.only(bottom: 12),
@@ -1525,22 +1434,8 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  if (imagePath.isNotEmpty)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.network(
-                        _imageUrlFromPath(imagePath),
-                        width: 72,
-                        height: 72,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
-                        const SizedBox(
-                          width: 72,
-                          height: 72,
-                        ),
-                      ),
-                    ),
-                  if (imagePath.isNotEmpty) const SizedBox(width: 12),
+                  _buildItemPreviewImage(item, imagePath),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1567,10 +1462,50 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
                         Text(
                           'Qty: ${_toInt(item['quantity'])} • Unit: ${_formatMoney(item['unit_price'])} • Total: ${_formatMoney(item['line_total'])}',
                           style: const TextStyle(
-                            color: Color(0xFFD4AF37),
+                            color: AppConstants.primaryColor,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed: () =>
+                                  _showImageSourceSheet(item),
+                              icon: const Icon(
+                                Icons.image_outlined,
+                                size: 18,
+                              ),
+                              label: Text(
+                                hasTempImage
+                                    ? 'Replace temp image'
+                                    : 'Set temp image',
+                              ),
+                            ),
+                            if (hasTempImage)
+                              OutlinedButton.icon(
+                                onPressed: () =>
+                                    _removeReplacementImage(item),
+                                icon: const Icon(
+                                  Icons.restore_outlined,
+                                  size: 18,
+                                ),
+                                label: const Text('Use original'),
+                              ),
+                          ],
+                        ),
+                        if (hasTempImage) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            'PDF override: ${_temporaryItemImageNames[item['id']] ?? 'selected image'}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppConstants.primaryColor,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -1609,26 +1544,10 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed:
-                  _isExportingXlsx ? null : _handleExportXlsx,
-                  icon: const Icon(Icons.table_view_outlined),
-                  label: const Text('Export XLSX'),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed:
-                  _isExportingPdf ? null : _handleExportPdf,
-                  icon: const Icon(Icons.picture_as_pdf_outlined),
-                  label: const Text('Export PDF'),
-                ),
-              ),
-            ],
+          FilledButton.icon(
+            onPressed: _isPreparingPdf ? null : _handleExportPdf,
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            label: const Text('Preview PDF'),
           ),
         ],
       ),
@@ -1649,10 +1568,10 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
             ),
           ),
           Text(
-            '${_formatMoney(value)} AED',
+            _formatMoneyWithAed(value),
             style: TextStyle(
               fontWeight: bold ? FontWeight.w900 : FontWeight.w700,
-              color: bold ? const Color(0xFFD4AF37) : null,
+              color: bold ?  AppConstants.primaryColor : null,
             ),
           ),
         ],

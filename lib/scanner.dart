@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
+import 'core/constants/app_constants.dart';
+
 class BarcodeScannerScreen extends StatefulWidget {
   const BarcodeScannerScreen({super.key});
 
@@ -136,7 +138,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
               height: 160,
               decoration: BoxDecoration(
                 border: Border.all(
-                  color: const Color(0xFFD4AF37),
+                  color:  AppConstants.primaryColor,
                   width: 2,
                 ),
                 borderRadius: BorderRadius.circular(20),
