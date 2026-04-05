@@ -866,8 +866,8 @@ class _QuotationListScreenState extends State<QuotationListScreen> {
   bool _isLoading = true;
   String? _error;
 
-  bool get _canViewAllQuotations => widget.role == 'accountant';
-  bool get _canViewOwnQuotations => widget.role == 'sales';
+  bool get _canViewAllQuotations => widget.role == 'accountant' || widget.role =='admin';
+  bool get _canViewOwnQuotations => widget.role == 'sales' || widget.role =='admin';
   bool get _canAccessQuotations => _canViewAllQuotations || _canViewOwnQuotations;
 
   List<Map<String, dynamic>> _allQuotations = [];
