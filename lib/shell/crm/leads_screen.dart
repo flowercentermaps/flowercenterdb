@@ -2205,6 +2205,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/constants/app_constants.dart';
+import 'customer_profile_screen.dart';
 
 class LeadsScreen extends StatefulWidget {
   final Map<String, dynamic> profile;
@@ -2520,7 +2521,8 @@ class _LeadsScreenState extends State<LeadsScreen> {
           .from('leads')
           .select()
           .order('updated_at', ascending: false)
-          .order('created_at', ascending: false);
+          .order('created_at', ascending: false)
+          .limit(20000);
 
       final rows = (response as List)
           .map((e) => Map<String, dynamic>.from(e as Map))
@@ -2712,6 +2714,17 @@ class _LeadsScreenState extends State<LeadsScreen> {
     }
   }
 
+  void _openCustomerProfile(Map<String, dynamic> lead) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CustomerProfileScreen(
+          lead: lead,
+          profile: widget.profile,
+        ),
+      ),
+    );
+  }
+
   Future<void> _showLeadDetails(Map<String, dynamic> lead) async {
     await showModalBottomSheet<void>(
       context: context,
@@ -2725,6 +2738,10 @@ class _LeadsScreenState extends State<LeadsScreen> {
           lead: lead,
           profileMap: _profileMap,
           canEdit: _canEditLead,
+          onViewProfile: () {
+            Navigator.of(context).pop();
+            _openCustomerProfile(lead);
+          },
           onEdit: _canEditLead
               ? () async {
             Navigator.of(context).pop();
@@ -2993,6 +3010,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
                   missingFields: _missingFields(lead),
                   statusColor: _statusColor(_text(lead['status']).toLowerCase()),
                   onTap: () => _showLeadDetails(lead),
+                  onViewProfile: () => _openCustomerProfile(lead),
                   onEdit: _canEditLead ? () => _openEditLeadDialog(lead) : null,
                 ),
               );
@@ -3017,6 +3035,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
               missingFields: _missingFields(lead),
               statusColor: _statusColor(_text(lead['status']).toLowerCase()),
               onTap: () => _showLeadDetails(lead),
+              onViewProfile: () => _openCustomerProfile(lead),
               onEdit: _canEditLead ? () => _openEditLeadDialog(lead) : null,
             ),
           );
@@ -3392,7 +3411,7 @@ class _DesktopLeadListHeader extends StatelessWidget {
               ),
             ),
           ),
-          SizedBox(width: 90),
+          SizedBox(width: 130),
         ],
       ),
     );
@@ -3406,6 +3425,7 @@ class _DesktopLeadRow extends StatelessWidget {
   final List<String> missingFields;
   final Color statusColor;
   final VoidCallback onTap;
+  final VoidCallback onViewProfile;
   final VoidCallback? onEdit;
 
   const _DesktopLeadRow({
@@ -3415,6 +3435,7 @@ class _DesktopLeadRow extends StatelessWidget {
     required this.missingFields,
     required this.statusColor,
     required this.onTap,
+    required this.onViewProfile,
     required this.onEdit,
   });
 
@@ -3559,10 +3580,16 @@ class _DesktopLeadRow extends StatelessWidget {
                 ),
               ),
               SizedBox(
-                width: 90,
+                width: 130,
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    IconButton(
+                      icon: const Icon(Icons.person_search_outlined),
+                      tooltip: 'View Profile',
+                      color: AppConstants.primaryColor,
+                      onPressed: onViewProfile,
+                    ),
                     if (canEdit)
                       FilledButton(
                         onPressed: onEdit,
@@ -3585,6 +3612,7 @@ class _MobileLeadCard extends StatelessWidget {
   final List<String> missingFields;
   final Color statusColor;
   final VoidCallback onTap;
+  final VoidCallback onViewProfile;
   final VoidCallback? onEdit;
 
   const _MobileLeadCard({
@@ -3593,6 +3621,7 @@ class _MobileLeadCard extends StatelessWidget {
     required this.missingFields,
     required this.statusColor,
     required this.onTap,
+    required this.onViewProfile,
     required this.onEdit,
   });
 
@@ -3698,18 +3727,26 @@ class _MobileLeadCard extends StatelessWidget {
                   style: const TextStyle(color: Colors.white70),
                 ),
               ],
-              if (canEdit) ...[
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Spacer(),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: onViewProfile,
+                    icon: const Icon(Icons.person_search_outlined, size: 16),
+                    label: const Text('Profile'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppConstants.primaryColor,
+                      side: const BorderSide(color: AppConstants.primaryColor),
+                    ),
+                  ),
+                  const Spacer(),
+                  if (canEdit)
                     FilledButton(
                       onPressed: onEdit,
                       child: const Text('Edit'),
                     ),
-                  ],
-                ),
-              ],
+                ],
+              ),
             ],
           ),
         ),
@@ -3853,6 +3890,7 @@ class LeadDetailsSheet extends StatelessWidget {
   final Map<String, dynamic> lead;
   final Map<String, Map<String, dynamic>> profileMap;
   final bool canEdit;
+  final VoidCallback? onViewProfile;
   final VoidCallback? onEdit;
 
   const LeadDetailsSheet({
@@ -3860,6 +3898,7 @@ class LeadDetailsSheet extends StatelessWidget {
     required this.lead,
     required this.profileMap,
     required this.canEdit,
+    this.onViewProfile,
     this.onEdit,
   });
 
@@ -3950,6 +3989,19 @@ class LeadDetailsSheet extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (onViewProfile != null)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: OutlinedButton.icon(
+                        onPressed: onViewProfile,
+                        icon: const Icon(Icons.person_search_outlined, size: 16),
+                        label: const Text('Profile'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppConstants.primaryColor,
+                          side: const BorderSide(color: AppConstants.primaryColor),
+                        ),
+                      ),
+                    ),
                   if (canEdit && onEdit != null)
                     FilledButton.icon(
                       onPressed: onEdit,
