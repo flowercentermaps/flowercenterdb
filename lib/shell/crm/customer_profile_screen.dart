@@ -1,7 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_constants.dart';
+
+Future<void> _openWhatsApp(String phone) async {
+  final cleaned = phone.replaceAll(RegExp(r'[\s\-().]+'), '');
+  final digits = cleaned.startsWith('+') ? cleaned.substring(1) : cleaned;
+  if (digits.isEmpty) return;
+  final uri = Uri.parse('https://wa.me/$digits');
+  if (await canLaunchUrl(uri)) {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+}
 
 class CustomerProfileScreen extends StatefulWidget {
   final Map<String, dynamic> lead;
@@ -319,16 +330,23 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                 ),
                 if (_phone.isNotEmpty) ...[
                   const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      const Icon(Icons.phone_outlined,
-                          size: 14, color: AppConstants.primaryColor),
-                      const SizedBox(width: 6),
-                      Text(
-                        _phone,
-                        style: const TextStyle(color: Colors.white70),
-                      ),
-                    ],
+                  GestureDetector(
+                    onTap: () => _openWhatsApp(_phone),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.phone_outlined,
+                            size: 14, color: AppConstants.primaryColor),
+                        const SizedBox(width: 6),
+                        Text(
+                          _phone,
+                          style: const TextStyle(
+                            color: Color(0xFF4FC3F7),
+                            decoration: TextDecoration.underline,
+                            decorationColor: Color(0xFF4FC3F7),
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ],
                 if (_email.isNotEmpty) ...[
@@ -404,7 +422,8 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                   _InfoRow(
                       label: 'Phone',
                       value: _phone,
-                      icon: Icons.phone_outlined),
+                      icon: Icons.phone_outlined,
+                      onTap: () => _openWhatsApp(_phone)),
                 if (_email.isNotEmpty)
                   _InfoRow(
                       label: 'Email',
@@ -656,47 +675,56 @@ class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
   final IconData icon;
+  final VoidCallback? onTap;
 
   const _InfoRow({
     required this.label,
     required this.value,
     required this.icon,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 14),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(top: 2),
-            child: Icon(icon, size: 17, color: AppConstants.primaryColor),
-          ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white38,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Icon(icon, size: 17, color: AppConstants.primaryColor),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white38,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: onTap != null ? const Color(0xFF4FC3F7) : null,
+                    decoration: onTap != null ? TextDecoration.underline : null,
+                    decorationColor:
+                        onTap != null ? const Color(0xFF4FC3F7) : null,
+                  ),
                 ),
-              ),
-            ],
-          ),
-        ],
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -95,6 +95,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'firebase_options.dart';
 import 'login_screen.dart';
 import 'shell/app_shell.dart';
+import 'update_checker.dart';
 
 @pragma('vm:entry-point')
 Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -117,7 +118,7 @@ Future<void> main() async {
     anonKey: 'sb_publishable_dcn9fuKgb4sWRxhrCWlUNA_2VaqIL6x',
   );
 
-  runApp(const MyApp());
+  runApp(const UpdateChecker(child: MyApp()));
 }
 
 final supabase = Supabase.instance.client;

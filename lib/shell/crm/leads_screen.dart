@@ -2203,9 +2203,21 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_constants.dart';
 import 'customer_profile_screen.dart';
+
+Future<void> _openWhatsApp(String phone) async {
+  // Clean phone: keep digits and leading +
+  final cleaned = phone.replaceAll(RegExp(r'[\s\-().]+'), '');
+  final digits = cleaned.startsWith('+') ? cleaned.substring(1) : cleaned;
+  if (digits.isEmpty) return;
+  final uri = Uri.parse('https://wa.me/$digits');
+  if (await canLaunchUrl(uri)) {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+}
 
 class LeadsScreen extends StatefulWidget {
   final Map<String, dynamic> profile;
@@ -3526,10 +3538,20 @@ class _DesktopLeadRow extends StatelessWidget {
               ),
               Expanded(
                 flex: 18,
-                child: Text(
-                  contact,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                child: GestureDetector(
+                  onTap: phone.isNotEmpty ? () => _openWhatsApp(phone) : null,
+                  child: Text(
+                    contact,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: phone.isNotEmpty
+                        ? const TextStyle(
+                            color: Color(0xFF4FC3F7),
+                            decoration: TextDecoration.underline,
+                            decorationColor: Color(0xFF4FC3F7),
+                          )
+                        : null,
+                  ),
                 ),
               ),
               Expanded(
@@ -3694,9 +3716,13 @@ class _MobileLeadCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 10),
-              _InfoText(
-                icon: Icons.phone_outlined,
-                text: phone.isEmpty ? 'No phone' : phone,
+              GestureDetector(
+                onTap: phone.isNotEmpty ? () => _openWhatsApp(phone) : null,
+                child: _InfoText(
+                  icon: Icons.phone_outlined,
+                  text: phone.isEmpty ? 'No phone' : phone,
+                  tappable: phone.isNotEmpty,
+                ),
               ),
               const SizedBox(height: 6),
               _InfoText(
@@ -3758,10 +3784,12 @@ class _MobileLeadCard extends StatelessWidget {
 class _InfoText extends StatelessWidget {
   final IconData icon;
   final String text;
+  final bool tappable;
 
   const _InfoText({
     required this.icon,
     required this.text,
+    this.tappable = false,
   });
 
   @override
@@ -3775,6 +3803,13 @@ class _InfoText extends StatelessWidget {
             text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
+            style: tappable
+                ? const TextStyle(
+                    color: Color(0xFF4FC3F7),
+                    decoration: TextDecoration.underline,
+                    decorationColor: Color(0xFF4FC3F7),
+                  )
+                : null,
           ),
         ),
       ],
@@ -3923,6 +3958,7 @@ class LeadDetailsSheet extends StatelessWidget {
   Widget _row({
     required String label,
     required String value,
+    VoidCallback? onTap,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
@@ -3938,11 +3974,17 @@ class LeadDetailsSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 4),
-          Text(
-            value.isEmpty ? '—' : value,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
+          GestureDetector(
+            onTap: onTap,
+            child: Text(
+              value.isEmpty ? '—' : value,
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: onTap != null ? const Color(0xFF4FC3F7) : null,
+                decoration: onTap != null ? TextDecoration.underline : null,
+                decorationColor: onTap != null ? const Color(0xFF4FC3F7) : null,
+              ),
             ),
           ),
         ],
@@ -4025,7 +4067,13 @@ class LeadDetailsSheet extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 20),
-              _row(label: 'Phone', value: _text(lead['phone'])),
+              _row(
+                label: 'Phone',
+                value: _text(lead['phone']),
+                onTap: _text(lead['phone']).isNotEmpty
+                    ? () => _openWhatsApp(_text(lead['phone']))
+                    : null,
+              ),
               _row(label: 'Email', value: _text(lead['email'])),
               _row(
                 label: 'Lead Type',
