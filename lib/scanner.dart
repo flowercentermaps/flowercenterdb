@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
@@ -81,8 +82,8 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
         });
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('No barcode found in the selected image.'),
+           SnackBar(
+            content: Text('No barcode found in the selected image.'.tr()),
           ),
         );
         return;
@@ -110,10 +111,10 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
-        title: const Text('Scan Barcode'),
+        title:  Text('Scan Barcode'.tr()),
         actions: [
           IconButton(
-            tooltip: 'Pick image',
+            tooltip: 'Pick image'.tr(),
             onPressed: _pickBarcodeFromImage,
             icon: _isPickingImage
                 ? const SizedBox(

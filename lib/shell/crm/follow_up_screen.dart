@@ -1753,6 +1753,7 @@
 
 import 'dart:async';
 
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -1993,8 +1994,8 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => FollowUpFormDialog(
-        title: 'Create Follow-up',
-        submitLabel: 'Create',
+        title: tr('followup_form_create'),
+        submitLabel: tr('btn_create'),
         leads: _leads,
         currentUserId: _currentUserId,
       ),
@@ -2007,14 +2008,14 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Follow-up created successfully.')),
+        SnackBar(content: Text(tr('followup_created'))),
       );
 
       await _loadData();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to create follow-up: $e')),
+        SnackBar(content: Text(tr('followup_create_failed', namedArgs: {'error': e.toString()}))),
       );
     }
   }
@@ -2024,8 +2025,8 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
       context: context,
       barrierDismissible: false,
       builder: (_) => FollowUpFormDialog(
-        title: 'Edit Follow-up',
-        submitLabel: 'Save',
+        title: tr('followup_form_edit'),
+        submitLabel: tr('btn_save'),
         leads: _leads,
         currentUserId: _currentUserId,
         initialItem: item,
@@ -2065,14 +2066,14 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Follow-up updated successfully.')),
+        SnackBar(content: Text(tr('followup_updated'))),
       );
 
       await _loadData();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update follow-up: $e')),
+        SnackBar(content: Text(tr('followup_update_failed', namedArgs: {'error': e.toString()}))),
       );
     }
   }
@@ -2103,14 +2104,14 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Follow-up marked as done.')),
+        SnackBar(content: Text(tr('followup_marked_done'))),
       );
 
       await _loadData();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to mark follow-up as done: $e')),
+        SnackBar(content: Text(tr('followup_mark_done_failed', namedArgs: {'error': e.toString()}))),
       );
     }
   }
@@ -2239,14 +2240,14 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
           ? FloatingActionButton.extended(
         onPressed: _openCreateDialog,
         icon: const Icon(Icons.add_rounded),
-        label: const Text('New Follow-up'),
+        label: Text(tr('btn_new_follow_up')),
       )
           : null,
       body: SafeArea(
         child: Column(
           children: [
             _FollowUpHeader(
-              title: widget.customTitle ?? 'Follow Up',
+              title: widget.customTitle ?? tr('followup_title'),
               showOwnHeader: widget.showOwnHeader,
               searchController: _searchController,
               selectedFilter: _selectedFilter,
@@ -2289,13 +2290,13 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
       return _StateCard(
         icon: Icons.error_outline_rounded,
         iconColor: Colors.redAccent,
-        title: 'Failed to load follow-ups',
+        title: tr('followup_error'),
         message: _error!,
         actions: [
           FilledButton.icon(
             onPressed: _loadData,
             icon: const Icon(Icons.refresh_rounded),
-            label: const Text('Retry'),
+            label: Text(tr('btn_retry')),
           ),
         ],
       );
@@ -2306,24 +2307,24 @@ class _FollowUpScreenState extends State<FollowUpScreen> {
         icon: Icons.event_note_outlined,
         iconColor: const Color(0xFFD4AF37),
         title: _allFollowUps.isEmpty
-            ? 'No follow-ups yet'
-            : 'No results for the current filters',
+            ? tr('followup_empty_title')
+            : tr('followup_empty_filtered'),
         message: _allFollowUps.isEmpty
             ? (_canCreate
-            ? 'Create your first follow-up to start tracking tasks.'
-            : 'There are no follow-ups available for your account.')
-            : 'Try a different search or status filter.',
+            ? tr('followup_empty_subtitle')
+            : tr('followup_empty_no_access'))
+            : tr('followup_empty_filter_hint'),
         actions: [
           OutlinedButton.icon(
             onPressed: _loadData,
             icon: const Icon(Icons.refresh_rounded),
-            label: const Text('Refresh'),
+            label: Text(tr('btn_refresh')),
           ),
           if (_canCreate && _allFollowUps.isEmpty)
             FilledButton.icon(
               onPressed: _openCreateDialog,
               icon: const Icon(Icons.add_rounded),
-              label: const Text('Create'),
+              label: Text(tr('btn_create')),
             ),
         ],
       );
@@ -2471,7 +2472,7 @@ class _FollowUpHeader extends StatelessWidget {
                     child: FilledButton.icon(
                       onPressed: onCreate,
                       icon: const Icon(Icons.add_rounded),
-                      label: const Text('New Follow-up'),
+                      label: Text(tr('btn_new_follow_up')),
                     ),
                   ),
                 if (isWide)
@@ -2487,10 +2488,10 @@ class _FollowUpHeader extends StatelessWidget {
                         await onLogout();
                       }
                     },
-                    itemBuilder: (_) => const [
+                    itemBuilder: (_) => [
                       PopupMenuItem<String>(
                         value: 'logout',
-                        child: Text('Logout'),
+                        child: Text(tr('btn_logout')),
                       ),
                     ],
                     icon: const Icon(Icons.account_circle_outlined),
@@ -2505,9 +2506,9 @@ class _FollowUpHeader extends StatelessWidget {
                   flex: 3,
                   child: TextField(
                     controller: searchController,
-                    decoration: const InputDecoration(
-                      hintText: 'Search by lead, assignee, or notes',
-                      prefixIcon: Icon(Icons.search_rounded),
+                    decoration: InputDecoration(
+                      hintText: tr('followup_search_hint'),
+                      prefixIcon: const Icon(Icons.search_rounded),
                     ),
                   ),
                 ),
@@ -2516,8 +2517,8 @@ class _FollowUpHeader extends StatelessWidget {
                   width: 220,
                   child: DropdownButtonFormField<String>(
                     value: selectedFilter,
-                    decoration: const InputDecoration(
-                      labelText: 'Status',
+                    decoration: InputDecoration(
+                      labelText: tr('followup_filter_status'),
                     ),
                     items: filters
                         .map(
@@ -2539,16 +2540,16 @@ class _FollowUpHeader extends StatelessWidget {
               children: [
                 TextField(
                   controller: searchController,
-                  decoration: const InputDecoration(
-                    hintText: 'Search by lead, assignee, or notes',
-                    prefixIcon: Icon(Icons.search_rounded),
+                  decoration: InputDecoration(
+                    hintText: tr('followup_search_hint'),
+                    prefixIcon: const Icon(Icons.search_rounded),
                   ),
                 ),
                 const SizedBox(height: 10),
                 DropdownButtonFormField<String>(
                   value: selectedFilter,
-                  decoration: const InputDecoration(
-                    labelText: 'Status',
+                  decoration: InputDecoration(
+                    labelText: tr('followup_filter_status'),
                   ),
                   items: filters
                       .map(
@@ -2592,7 +2593,7 @@ class _FollowUpHeader extends StatelessWidget {
                 TextButton.icon(
                   onPressed: onClearFilters,
                   icon: const Icon(Icons.filter_alt_off_rounded),
-                  label: const Text('Clear'),
+                  label: Text(tr('btn_clear')),
                 ),
             ],
           ),
@@ -2648,10 +2649,10 @@ class _FollowUpProfileMenu extends StatelessWidget {
               await onLogout();
             }
           },
-          itemBuilder: (_) => const [
+          itemBuilder: (_) => [
             PopupMenuItem<String>(
               value: 'logout',
-              child: Text('Logout'),
+              child: Text(tr('btn_logout')),
             ),
           ],
           icon: const Icon(Icons.account_circle_outlined),
@@ -2672,13 +2673,13 @@ class _DesktopFollowUpListHeader extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFF30260A)),
       ),
-      child: const Row(
+      child: Row(
         children: [
           Expanded(
             flex: 28,
             child: Text(
-              'Lead',
-              style: TextStyle(
+              tr('followup_col_lead'),
+              style: const TextStyle(
                 fontWeight: FontWeight.w800,
                 color: Colors.white70,
               ),
@@ -2687,8 +2688,8 @@ class _DesktopFollowUpListHeader extends StatelessWidget {
           Expanded(
             flex: 18,
             child: Text(
-              'Due',
-              style: TextStyle(
+              tr('followup_col_due'),
+              style: const TextStyle(
                 fontWeight: FontWeight.w800,
                 color: Colors.white70,
               ),
@@ -2697,8 +2698,8 @@ class _DesktopFollowUpListHeader extends StatelessWidget {
           Expanded(
             flex: 18,
             child: Text(
-              'Assigned To',
-              style: TextStyle(
+              tr('followup_col_assigned_to'),
+              style: const TextStyle(
                 fontWeight: FontWeight.w800,
                 color: Colors.white70,
               ),
@@ -2707,8 +2708,8 @@ class _DesktopFollowUpListHeader extends StatelessWidget {
           Expanded(
             flex: 16,
             child: Text(
-              'Status',
-              style: TextStyle(
+              tr('followup_col_status'),
+              style: const TextStyle(
                 fontWeight: FontWeight.w800,
                 color: Colors.white70,
               ),
@@ -2717,14 +2718,14 @@ class _DesktopFollowUpListHeader extends StatelessWidget {
           Expanded(
             flex: 28,
             child: Text(
-              'Notes',
-              style: TextStyle(
+              tr('followup_col_notes'),
+              style: const TextStyle(
                 fontWeight: FontWeight.w800,
                 color: Colors.white70,
               ),
             ),
           ),
-          SizedBox(width: 170),
+          const SizedBox(width: 170),
         ],
       ),
     );
@@ -2764,7 +2765,7 @@ class _DesktopFollowUpRow extends StatelessWidget {
   }
 
   String _formatDateTime(DateTime? dateTime) {
-    if (dateTime == null) return 'No due date';
+    if (dateTime == null) return tr('followup_no_due_date');
     final local = dateTime.toLocal();
     final y = local.year.toString().padLeft(4, '0');
     final m = local.month.toString().padLeft(2, '0');
@@ -2864,12 +2865,12 @@ class _DesktopFollowUpRow extends StatelessWidget {
                     if (canMarkDone)
                       OutlinedButton(
                         onPressed: onMarkDone,
-                        child: const Text('Done'),
+                        child: Text(tr('btn_done')),
                       ),
                     if (canEdit)
                       FilledButton(
                         onPressed: onEdit,
-                        child: const Text('Edit'),
+                        child: Text(tr('btn_edit')),
                       ),
                   ],
                 ),
@@ -2936,7 +2937,7 @@ class _MobileFollowUpCard extends StatelessWidget {
   }
 
   String _formatDateTime(DateTime? dateTime) {
-    if (dateTime == null) return 'No due date';
+    if (dateTime == null) return tr('followup_no_due_date');
     final local = dateTime.toLocal();
     final y = local.year.toString().padLeft(4, '0');
     final m = local.month.toString().padLeft(2, '0');
@@ -3020,13 +3021,13 @@ class _MobileFollowUpCard extends StatelessWidget {
                         padding: const EdgeInsets.only(right: 8),
                         child: OutlinedButton(
                           onPressed: onMarkDone,
-                          child: const Text('Done'),
+                          child: Text(tr('btn_done')),
                         ),
                       ),
                     if (canEdit)
                       FilledButton(
                         onPressed: onEdit,
-                        child: const Text('Edit'),
+                        child: Text(tr('btn_edit')),
                       ),
                   ],
                 ),
@@ -3267,28 +3268,28 @@ class FollowUpDetailsSheet extends StatelessWidget {
                       child: OutlinedButton.icon(
                         onPressed: onMarkDone,
                         icon: const Icon(Icons.check_circle_outline_rounded),
-                        label: const Text('Done'),
+                        label: Text(tr('btn_done')),
                       ),
                     ),
                   if (canEdit && onEdit != null)
                     FilledButton.icon(
                       onPressed: onEdit,
                       icon: const Icon(Icons.edit_outlined),
-                      label: const Text('Edit'),
+                      label: Text(tr('btn_edit')),
                     ),
                 ],
               ),
               const SizedBox(height: 18),
-              _row(label: 'Lead', value: leadLabel),
+              _row(label: tr('followup_detail_lead'), value: leadLabel),
               _row(
-                label: 'Due At',
+                label: tr('followup_detail_due'),
                 value: _formatDateTime(_parseDateTime(item['due_at'])),
               ),
-              _row(label: 'Status', value: _text(item['status']).toUpperCase()),
-              _row(label: 'Assigned To', value: assigneeLabel),
-              _row(label: 'Notes', value: _text(item['notes'])),
+              _row(label: tr('followup_col_status'), value: _text(item['status']).toUpperCase()),
+              _row(label: tr('followup_detail_assigned'), value: assigneeLabel),
+              _row(label: tr('followup_col_notes'), value: _text(item['notes'])),
               _row(
-                label: 'Completed At',
+                label: tr('followup_detail_completed'),
                 value: _formatDateTime(_parseDateTime(item['completed_at'])),
               ),
             ],
@@ -3466,8 +3467,8 @@ class _FollowUpFormDialogState extends State<FollowUpFormDialog> {
                         Expanded(
                           child: DropdownButtonFormField<String>(
                             value: _leadId,
-                            decoration: const InputDecoration(
-                              labelText: 'Lead *',
+                            decoration: InputDecoration(
+                              labelText: tr('followup_field_lead'),
                             ),
                             items: widget.leads
                                 .map(
@@ -3487,7 +3488,7 @@ class _FollowUpFormDialogState extends State<FollowUpFormDialog> {
                             },
                             validator: (value) {
                               if ((value ?? '').trim().isEmpty) {
-                                return 'Lead is required';
+                                return tr('followup_validation_lead');
                               }
                               return null;
                             },
@@ -3497,8 +3498,8 @@ class _FollowUpFormDialogState extends State<FollowUpFormDialog> {
                         Expanded(
                           child: DropdownButtonFormField<String>(
                             value: _status,
-                            decoration: const InputDecoration(
-                              labelText: 'Status',
+                            decoration: InputDecoration(
+                              labelText: tr('followup_field_status'),
                             ),
                             items: _statuses
                                 .map(
@@ -3521,8 +3522,8 @@ class _FollowUpFormDialogState extends State<FollowUpFormDialog> {
                   else ...[
                     DropdownButtonFormField<String>(
                       value: _leadId,
-                      decoration: const InputDecoration(
-                        labelText: 'Lead *',
+                      decoration: InputDecoration(
+                        labelText: tr('followup_field_lead'),
                       ),
                       items: widget.leads
                           .map(
@@ -3542,7 +3543,7 @@ class _FollowUpFormDialogState extends State<FollowUpFormDialog> {
                       },
                       validator: (value) {
                         if ((value ?? '').trim().isEmpty) {
-                          return 'Lead is required';
+                          return tr('followup_validation_lead');
                         }
                         return null;
                       },
@@ -3550,8 +3551,8 @@ class _FollowUpFormDialogState extends State<FollowUpFormDialog> {
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
                       value: _status,
-                      decoration: const InputDecoration(
-                        labelText: 'Status',
+                      decoration: InputDecoration(
+                        labelText: tr('followup_field_status'),
                       ),
                       items: _statuses
                           .map(
@@ -3606,11 +3607,11 @@ class _FollowUpFormDialogState extends State<FollowUpFormDialog> {
                     ),
                   ),
                   if (_dueAt == null)
-                    const Padding(
-                      padding: EdgeInsets.only(top: 8, left: 4),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8, left: 4),
                       child: Text(
-                        'Due date and time are required',
-                        style: TextStyle(
+                        tr('followup_validation_date'),
+                        style: const TextStyle(
                           color: Colors.redAccent,
                           fontSize: 12,
                         ),

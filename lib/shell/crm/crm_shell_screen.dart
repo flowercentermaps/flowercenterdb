@@ -1425,7 +1425,7 @@
 // //       if (!mounted) return;
 // //
 // //       ScaffoldMessenger.of(context).showSnackBar(
-// //         SnackBar(content: Text('Failed to delete account: $e')),
+// //         SnackBar(content: Text(tr('delete_account_failed', namedArgs: {'error': e.toString()}))),
 // //       );
 // //     }
 // //   }
@@ -2676,7 +2676,7 @@
 //     } catch (e) {
 //       if (!mounted) return;
 //       ScaffoldMessenger.of(context).showSnackBar(
-//         SnackBar(content: Text('Failed to delete account: $e')),
+//         SnackBar(content: Text(tr('delete_account_failed', namedArgs: {'error': e.toString()}))),
 //       );
 //     }
 //   }
@@ -3463,10 +3463,12 @@ import 'dart:async';
 
 import 'package:FlowerCenterCrm/shell/crm/shared_leads_screen.dart';
 import 'package:FlowerCenterCrm/shell/crm/statistics_screen.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/widgets/laguage_switcher.dart';
 import '../../price_list_screen.dart';
 import '../../user_role_management_screen.dart';
 import 'agent_performance_screen.dart';
@@ -3797,7 +3799,7 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
     final items = <_CrmNavItem>[
       _CrmNavItem(
         keyName: 'home',
-        label: 'Home',
+        label: 'nav_home'.tr(),
         icon: Icons.dashboard_outlined,
         badgeCount: _badgeCountFor('home'),
         builder: () => HomeDashboardScreen(
@@ -3808,7 +3810,7 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
       ),
       _CrmNavItem(
         keyName: 'notifications',
-        label: 'Notifications',
+        label: 'nav_notifications'.tr(),
         icon: Icons.notifications_active_outlined,
         badgeCount: _badgeCountFor('notifications'),
         builder: () => NotificationsScreen(
@@ -3819,7 +3821,7 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
       ),
       _CrmNavItem(
         keyName: 'leads',
-        label: 'Leads',
+        label: 'nav_leads'.tr(),
         icon: Icons.people_alt_outlined,
         badgeCount: _badgeCountFor('leads'),
         builder: () => LeadsScreen(
@@ -3829,7 +3831,7 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
       ),
       _CrmNavItem(
         keyName: 'follow_up',
-        label: 'Follow Up',
+        label: 'nav_follow_up'.tr(),
         icon: Icons.reply_all_rounded,
         badgeCount: _badgeCountFor('follow_up'),
         builder: () => FollowUpScreen(
@@ -3840,7 +3842,16 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
       ),
       _CrmNavItem(
         keyName: 'products',
-        label: 'Products',
+        label: 'nav_products'.tr(),
+        icon: Icons.inventory_2_outlined,
+        badgeCount: _badgeCountFor('products'),
+        builder: () => PriceListScreen(
+          profile: widget.profile,
+          onLogout: widget.onLogout,
+        ),
+      ),      _CrmNavItem(
+        keyName: 'products',
+        label: 'nav_products'.tr(),
         icon: Icons.inventory_2_outlined,
         badgeCount: _badgeCountFor('products'),
         builder: () => PriceListScreen(
@@ -3854,7 +3865,7 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
       items.add(
         _CrmNavItem(
           keyName: 'statistics',
-          label: 'Statistics',
+          label: 'nav_statistics'.tr(),
           icon: Icons.bar_chart_rounded,
           badgeCount: _badgeCountFor('statistics'),
           builder: () => StatisticsScreen(
@@ -3869,7 +3880,7 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
         items.add(
           _CrmNavItem(
             keyName: 'shared_leads',
-            label: 'Shared Leads',
+            label: 'nav_shared_leads'.tr(),
             icon: Icons.share_outlined,
             badgeCount: _badgeCountFor('shared_leads'),
             builder: () => SharedLeadsScreen(
@@ -3884,7 +3895,7 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
       items.addAll([
         _CrmNavItem(
           keyName: 'agent_performance',
-          label: 'Agent Performance',
+          label: 'nav_agent_performance'.tr(),
           icon: Icons.groups_2_outlined,
           badgeCount: _badgeCountFor('agent_performance'),
           builder: () => AgentPerformanceScreen(
@@ -3895,7 +3906,7 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
         ),
         _CrmNavItem(
           keyName: 'user_roles',
-          label: 'User Roles',
+          label: 'nav_user_roles'.tr(),
           icon: Icons.admin_panel_settings_outlined,
           badgeCount: _badgeCountFor('user_roles'),
           builder: () => UserRoleManagementScreen(
@@ -3909,11 +3920,11 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
       items.add(
         _CrmNavItem(
           keyName: 'accounting_tools',
-          label: 'Accounting',
+          label: 'nav_accounting'.tr(),
           icon: Icons.receipt_long_outlined,
           badgeCount: _badgeCountFor('accounting_tools'),
-          builder: () => const _PlaceholderModule(
-            title: 'Accounting',
+          builder: () =>  _PlaceholderModule(
+            title: 'Accounting'.tr(),
             subtitle:
             'Accountant role is active. Add quotation/accounting tools here next.',
             icon: Icons.receipt_long_outlined,
@@ -3957,7 +3968,7 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to delete account: $e')),
+        SnackBar(content: Text(tr('delete_account_failed', namedArgs: {'error': e.toString()}))),
       );
     }
   }
@@ -3968,19 +3979,19 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
       barrierDismissible: false,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Delete My Account'),
-          content: const Text(
-            'This will permanently delete your login account. '
-                'You will lose access immediately. This action cannot be undone.',
+          title:  Text('delete_account_menu'.tr()),
+          content:  Text(
+            'delete_account_message'.tr()
+                // 'You will lose access immediately. This action cannot be undone.',
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
+              child:  Text('btn_cancel'.tr()),
             ),
             FilledButton(
               onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Delete'),
+              child:  Text('btn_delete'.tr()),
             ),
           ],
         );
@@ -4234,9 +4245,9 @@ class _CrmSidebar extends StatelessWidget {
                   height: 34,
                 ),
                 const SizedBox(width: 10),
-                const Expanded(
+                 Expanded(
                   child: Text(
-                    'Flower Center CRM',
+                    'app_name'.tr(),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -4246,44 +4257,46 @@ class _CrmSidebar extends StatelessWidget {
                     ),
                   ),
                 ),
+
               ],
             ),
           ),
+          LanguageSwitcher(),
           const Divider(height: 1, thickness: 1, color: Color(0xFF2A220A)),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  _displayName(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  _role(),
-                  style: const TextStyle(
-                    color: AppConstants.primaryColor,
-                    fontWeight: FontWeight.w800,
-                    fontSize: 11.5,
-                    letterSpacing: 0.4,
-                  ),
-                ),
-              ],
-            ),
-          ),
+          // Padding(
+          //   padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
+          //   child: Column(
+          //     crossAxisAlignment: CrossAxisAlignment.start,
+          //     children: [
+          //       Text(
+          //         _displayName(),
+          //         maxLines: 1,
+          //         overflow: TextOverflow.ellipsis,
+          //         style: const TextStyle(
+          //           fontWeight: FontWeight.w700,
+          //           fontSize: 14,
+          //         ),
+          //       ),
+          //       const SizedBox(height: 4),
+          //       Text(
+          //         _role(),
+          //         style: const TextStyle(
+          //           color: AppConstants.primaryColor,
+          //           fontWeight: FontWeight.w800,
+          //           fontSize: 11.5,
+          //           letterSpacing: 0.4,
+          //         ),
+          //       ),
+          //     ],
+          //   ),
+          // ),
           const Divider(height: 1, thickness: 1, color: Color(0xFF2A220A)),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
               children: [
                 if (primaryEntries.isNotEmpty) ...[
-                  const _SidebarSectionLabel(label: 'Main'),
+                  _SidebarSectionLabel(label: 'nav_main'.tr()),
                   const SizedBox(height: 6),
                   ...primaryEntries.map(
                         (entry) => Padding(
@@ -4298,7 +4311,7 @@ class _CrmSidebar extends StatelessWidget {
                 ],
                 if (secondaryEntries.isNotEmpty) ...[
                   const SizedBox(height: 10),
-                  const _SidebarSectionLabel(label: 'More'),
+                   _SidebarSectionLabel(label: 'nav_more'.tr()),
                   const SizedBox(height: 6),
                   ...secondaryEntries.map(
                         (entry) => Padding(
@@ -4434,8 +4447,8 @@ class _CrmDrawer extends StatelessWidget {
         child: Column(
           children: [
             ListTile(
-              title: const Text(
-                'Flower Center CRM',
+              title:  Text(
+                'app_name'.tr(),
                 style: TextStyle(
                   color: AppConstants.primaryColor,
                   fontWeight: FontWeight.w900,
@@ -4467,7 +4480,7 @@ class _CrmDrawer extends StatelessWidget {
             const Divider(color: Color(0xFF2A220A)),
             ListTile(
               leading: const Icon(Icons.delete_forever_rounded),
-              title: const Text('Delete My Account'),
+              title:  Text('delete_account_title'.tr()),
               onTap: () {
                 Navigator.of(context).pop();
                 Future.microtask(onDeleteAccount);
@@ -4475,7 +4488,7 @@ class _CrmDrawer extends StatelessWidget {
             ),
             ListTile(
               leading: const Icon(Icons.logout_rounded),
-              title: const Text('Logout'),
+              title:  Text('btn_logout'.tr()),
               onTap: () async {
                 Navigator.of(context).pop();
                 await onLogout();
@@ -4547,14 +4560,14 @@ class _CrmTopBar extends StatelessWidget {
                       await onLogout();
                     }
                   },
-                  itemBuilder: (_) => const [
+                  itemBuilder: (_) => [
                     PopupMenuItem<String>(
                       value: 'delete_account',
-                      child: Text('Delete My Account'),
+                      child: Text(tr('delete_account_menu')),
                     ),
                     PopupMenuItem<String>(
                       value: 'logout',
-                      child: Text('Logout'),
+                      child: Text(tr('btn_logout')),
                     ),
                   ],
                   icon: const Icon(Icons.account_circle_outlined),
@@ -4638,13 +4651,13 @@ class _CrmMobileTopBar extends StatelessWidget {
                 ),
               ),
               const PopupMenuDivider(),
-              const PopupMenuItem<String>(
+              PopupMenuItem<String>(
                 value: 'delete_account',
-                child: Text('Delete My Account'),
+                child: Text(tr('delete_account_menu')),
               ),
-              const PopupMenuItem<String>(
+              PopupMenuItem<String>(
                 value: 'logout',
-                child: Text('Logout'),
+                child: Text(tr('btn_logout')),
               ),
             ],
             icon: const Icon(Icons.account_circle_outlined),

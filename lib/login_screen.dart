@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/constants/app_constants.dart';
@@ -33,7 +34,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     if (email.isEmpty || password.isEmpty) {
       setState(() {
-        _error = 'Email and password are required.';
+        _error = tr('login_error_required');
       });
       return;
     }
@@ -137,7 +138,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 16),
                         Text(
-                          'Login',
+                          tr('login_title'),
                           style: theme.textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.w900,
                             color: Colors.white,
@@ -145,7 +146,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'Sign in with your account',
+                          tr('login_subtitle'),
                           style: theme.textTheme.bodyMedium?.copyWith(
                             color: Colors.white70,
                           ),
@@ -156,7 +157,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           keyboardType: TextInputType.emailAddress,
                           style: const TextStyle(color: Colors.white),
                           decoration: InputDecoration(
-                            labelText: 'Email',
+                            labelText: tr('login_email'),
                             labelStyle: const TextStyle(color: Colors.white70),
                             prefixIcon: const Icon(
                               Icons.email_outlined,
@@ -185,7 +186,7 @@ class _LoginScreenState extends State<LoginScreen> {
                           onSubmitted: (_) => _isLoading ? null : _login(),
                           style: const TextStyle(color: Colors.white),
                           decoration: InputDecoration(
-                            labelText: 'Password',
+                            labelText: tr('login_password'),
                             labelStyle: const TextStyle(color: Colors.white70),
                             prefixIcon: const Icon(
                               Icons.lock_outline,
@@ -253,7 +254,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                 strokeWidth: 2,
                               ),
                             )
-                                : const Text('Login'),
+                                :  Text('login_title'.tr()),
                           ),
                         ),
                       ],

@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -99,7 +100,7 @@ class _UserRoleManagementScreenState extends State<UserRoleManagementScreen> {
     final email = (user['email'] ?? '').toString().trim();
     if (fullName.isNotEmpty) return fullName;
     if (email.isNotEmpty) return email;
-    return 'Unknown User';
+    return tr('roles_unknown_user');
   }
 
   List<Map<String, dynamic>> get _filteredUsers {
@@ -134,8 +135,8 @@ class _UserRoleManagementScreenState extends State<UserRoleManagementScreen> {
     // Prevent self-demotion unless you explicitly want it.
     if (profileId == widget.currentUserId) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('You cannot change your own role from this screen.'),
+        SnackBar(
+          content: Text(tr('roles_cannot_change_own')),
         ),
       );
       return;
@@ -162,7 +163,7 @@ class _UserRoleManagementScreenState extends State<UserRoleManagementScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Role updated to $newRole.')),
+        SnackBar(content: Text(tr('roles_updated', namedArgs: {'role': newRole}))),
       );
     } catch (e) {
       if (!mounted) return;
@@ -171,7 +172,7 @@ class _UserRoleManagementScreenState extends State<UserRoleManagementScreen> {
       });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to update role: $e')),
+        SnackBar(content: Text(tr('roles_update_failed', namedArgs: {'error': e.toString()}))),
       );
     }
   }
@@ -206,14 +207,14 @@ class _UserRoleManagementScreenState extends State<UserRoleManagementScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Updated ${changedUsers.length} user role(s).')),
+        SnackBar(content: Text(tr('roles_saved', namedArgs: {'n': changedUsers.length.toString()}))),
       );
 
       setState(() {});
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to save roles: $e')),
+        SnackBar(content: Text(tr('roles_save_failed', namedArgs: {'error': e.toString()}))),
       );
     } finally {
       if (mounted) {
@@ -230,7 +231,7 @@ class _UserRoleManagementScreenState extends State<UserRoleManagementScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Manage User Roles'),
+        title: Text(tr('roles_title')),
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -251,10 +252,10 @@ class _UserRoleManagementScreenState extends State<UserRoleManagementScreen> {
           children: [
             TextField(
               controller: _searchController,
-              decoration: const InputDecoration(
-                labelText: 'Search users',
-                hintText: 'Search by name, email, or role',
-                prefixIcon: Icon(Icons.search_rounded),
+              decoration: InputDecoration(
+                labelText: tr('roles_search_label'),
+                hintText: tr('roles_search_hint'),
+                prefixIcon: const Icon(Icons.search_rounded),
               ),
             ),
             const SizedBox(height: 12),
@@ -262,7 +263,7 @@ class _UserRoleManagementScreenState extends State<UserRoleManagementScreen> {
               children: [
                 Expanded(
                   child: Text(
-                    '${_filteredUsers.length} user(s)',
+                    tr('roles_count', namedArgs: {'n': _filteredUsers.length.toString()}),
                     style: theme.textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -277,7 +278,7 @@ class _UserRoleManagementScreenState extends State<UserRoleManagementScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                       : const Icon(Icons.save_outlined),
-                  label: Text(_isSavingAll ? 'Saving...' : 'Save All Changes'),
+                  label: Text(_isSavingAll ? 'Saving...' : tr('btn_save_all')),
                 ),
               ],
             ),
@@ -321,7 +322,7 @@ class _UserRoleManagementScreenState extends State<UserRoleManagementScreen> {
                               ),
                               const SizedBox(height: 6),
                               Text(
-                                'Current role: ${currentRole.toUpperCase()}',
+                                tr('roles_current', namedArgs: {'role': currentRole.toUpperCase()}),
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w700,
                                 ),
@@ -341,7 +342,7 @@ class _UserRoleManagementScreenState extends State<UserRoleManagementScreen> {
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
-                            isActive ? 'ACTIVE' : 'INACTIVE',
+                            isActive ? tr('roles_active') : tr('roles_inactive'),
                             style: const TextStyle(
                               fontWeight: FontWeight.w800,
                               fontSize: 11,
@@ -353,8 +354,8 @@ class _UserRoleManagementScreenState extends State<UserRoleManagementScreen> {
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
                       value: selectedRole,
-                      decoration: const InputDecoration(
-                        labelText: 'New role',
+                      decoration: InputDecoration(
+                        labelText: tr('roles_new_role'),
                       ),
                       items: _allowedRoles
                           .map(
@@ -377,10 +378,10 @@ class _UserRoleManagementScreenState extends State<UserRoleManagementScreen> {
                     Row(
                       children: [
                         if (isSelf)
-                          const Expanded(
+                          Expanded(
                             child: Text(
-                              'Your own role cannot be changed here.',
-                              style: TextStyle(
+                              tr('roles_own_role'),
+                              style: const TextStyle(
                                 color: Colors.orangeAccent,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -389,7 +390,7 @@ class _UserRoleManagementScreenState extends State<UserRoleManagementScreen> {
                         else if (changed)
                           Expanded(
                             child: Text(
-                              'Pending change: ${currentRole.toUpperCase()} → ${selectedRole.toUpperCase()}',
+                              tr('roles_pending', namedArgs: {'from': currentRole.toUpperCase(), 'to': selectedRole.toUpperCase()}),
                               style: const TextStyle(
                                 color: Colors.amber,
                                 fontWeight: FontWeight.w700,
@@ -397,10 +398,10 @@ class _UserRoleManagementScreenState extends State<UserRoleManagementScreen> {
                             ),
                           )
                         else
-                          const Expanded(
+                          Expanded(
                             child: Text(
-                              'No changes',
-                              style: TextStyle(
+                              tr('roles_no_changes'),
+                              style: const TextStyle(
                                 color: Colors.grey,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -420,7 +421,7 @@ class _UserRoleManagementScreenState extends State<UserRoleManagementScreen> {
                             ),
                           )
                               : const Icon(Icons.save_outlined),
-                          label: Text(isSaving ? 'Saving...' : 'Save'),
+                          label: Text(isSaving ? 'Saving...' : tr('btn_save')),
                         ),
                       ],
                     ),

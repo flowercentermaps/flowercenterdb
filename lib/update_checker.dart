@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -171,9 +172,9 @@ class _UpdateCheckerState extends State<UpdateChecker>
                           size: 56,
                         ),
                         const SizedBox(height: 20),
-                        const Text(
-                          'Update Required',
-                          style: TextStyle(
+                        Text(
+                          tr('update_title'),
+                          style: const TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w900,
                             color: Colors.white,
@@ -181,8 +182,7 @@ class _UpdateCheckerState extends State<UpdateChecker>
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          'Version $_currentVersion is no longer supported.\n'
-                          'Please update to version $_requiredVersion or later.',
+                          tr('update_message', namedArgs: {'current': _currentVersion, 'required': _requiredVersion}),
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             color: Colors.white70,
@@ -196,9 +196,9 @@ class _UpdateCheckerState extends State<UpdateChecker>
                           child: FilledButton.icon(
                             onPressed: _openDownload,
                             icon: const Icon(Icons.download_rounded),
-                            label: const Text(
-                              'Download Update',
-                              style: TextStyle(
+                            label: Text(
+                              tr('btn_download_update'),
+                              style: const TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 16,
                               ),

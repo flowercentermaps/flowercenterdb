@@ -2387,6 +2387,7 @@
 // }
 
 
+import 'package:easy_localization/easy_localization.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -2483,7 +2484,7 @@ class _AgentPerformanceScreenState extends State<AgentPerformanceScreen> {
         child: Column(
           children: [
             _AgentHeader(
-              title: widget.customTitle ?? 'Agent Performance',
+              title: widget.customTitle ?? tr('agent_title'),
               showOwnHeader: widget.showOwnHeader,
               profileName: _displayName(),
               role: _role,
@@ -2504,11 +2505,11 @@ class _AgentPerformanceScreenState extends State<AgentPerformanceScreen> {
 
   Widget _buildBody(bool isDesktop) {
     if (!_isAdmin) {
-      return const _StateCard(
+      return _StateCard(
         icon: Icons.lock_outline_rounded,
-        iconColor: Color(0xFFD4AF37),
-        title: 'Admin access only',
-        message: 'Only admins can view agent performance.',
+        iconColor: const Color(0xFFD4AF37),
+        title: tr('agent_admin_only_title'),
+        message: tr('agent_admin_only_message'),
       );
     }
 
@@ -2520,24 +2521,24 @@ class _AgentPerformanceScreenState extends State<AgentPerformanceScreen> {
       return _StateCard(
         icon: Icons.error_outline_rounded,
         iconColor: Colors.redAccent,
-        title: 'Failed to load agent performance',
+        title: tr('agent_error'),
         message: _error!,
         actions: [
           FilledButton.icon(
             onPressed: _loadRows,
             icon: const Icon(Icons.refresh_rounded),
-            label: const Text('Retry'),
+            label: Text(tr('btn_retry')),
           ),
         ],
       );
     }
 
     if (_rows.isEmpty) {
-      return const _StateCard(
+      return _StateCard(
         icon: Icons.groups_2_outlined,
-        iconColor: Color(0xFFD4AF37),
-        title: 'No sales users found',
-        message: 'There are no rows available in the agent performance view.',
+        iconColor: const Color(0xFFD4AF37),
+        title: tr('agent_empty_title'),
+        message: tr('agent_empty_message'),
       );
     }
 
@@ -2554,8 +2555,8 @@ class _AgentPerformanceScreenState extends State<AgentPerformanceScreen> {
           _OverviewGrid(rows: _rows, isDesktop: isDesktop),
           const SizedBox(height: 14),
           _Panel(
-            title: 'Top Agent Comparison',
-            subtitle: 'Total leads, won leads, and pending follow-ups',
+            title: tr('agent_comparison_title'),
+            subtitle: tr('agent_comparison_subtitle'),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -2570,8 +2571,8 @@ class _AgentPerformanceScreenState extends State<AgentPerformanceScreen> {
           ),
           const SizedBox(height: 14),
           _Panel(
-            title: 'Agent Breakdown',
-            subtitle: 'Per-agent totals and distribution',
+            title: tr('agent_breakdown_title'),
+            subtitle: tr('agent_breakdown_subtitle'),
             child: isDesktop
                 ? Column(
               children: [
@@ -2679,7 +2680,7 @@ class _AgentHeader extends StatelessWidget {
                 FilledButton.icon(
                   onPressed: onRefresh,
                   icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Refresh'),
+                  label: Text(tr('btn_refresh')),
                 ),
                 const SizedBox(width: 12),
                 if (isWide)
@@ -2693,10 +2694,10 @@ class _AgentHeader extends StatelessWidget {
                     onSelected: (value) async {
                       if (value == 'logout') await onLogout();
                     },
-                    itemBuilder: (_) => const [
+                    itemBuilder: (_) => [
                       PopupMenuItem<String>(
                         value: 'logout',
-                        child: Text('Logout'),
+                        child: Text(tr('btn_logout')),
                       ),
                     ],
                     icon: const Icon(Icons.account_circle_outlined),
@@ -2761,10 +2762,10 @@ class _ProfileMenu extends StatelessWidget {
           onSelected: (value) async {
             if (value == 'logout') await onLogout();
           },
-          itemBuilder: (_) => const [
+          itemBuilder: (_) => [
             PopupMenuItem<String>(
               value: 'logout',
-              child: Text('Logout'),
+              child: Text(tr('btn_logout')),
             ),
           ],
           icon: const Icon(Icons.account_circle_outlined),
@@ -2807,16 +2808,16 @@ class _OverviewGrid extends StatelessWidget {
     );
 
     final items = <_OverviewData>[
-      _OverviewData('Sales Users', totalAgents, Icons.badge_outlined),
-      _OverviewData('Owned Leads', totalLeads, Icons.people_outline_rounded),
-      _OverviewData('Won Leads', totalWon, Icons.emoji_events_outlined),
+      _OverviewData(tr('agent_sales_users'), totalAgents, Icons.badge_outlined),
+      _OverviewData(tr('agent_owned_leads'), totalLeads, Icons.people_outline_rounded),
+      _OverviewData(tr('agent_won_leads'), totalWon, Icons.emoji_events_outlined),
       _OverviewData(
-        'Pending Follow-ups',
+        tr('agent_pending_followups'),
         totalPending,
         Icons.schedule_rounded,
       ),
       _OverviewData(
-        'Overdue Follow-ups',
+        tr('agent_overdue_followups'),
         totalOverdue,
         Icons.warning_amber_rounded,
       ),
@@ -2956,18 +2957,18 @@ class _ChartLegend extends StatelessWidget {
     return Wrap(
       spacing: 14,
       runSpacing: 10,
-      children: const [
+      children: [
         _LegendItem(
-          color: Color(0xFFD4AF37),
-          label: 'Total Leads',
+          color: const Color(0xFFD4AF37),
+          label: tr('agent_total_leads'),
         ),
         _LegendItem(
-          color: Color(0xFF2E7D32),
-          label: 'Won Leads',
+          color: const Color(0xFF2E7D32),
+          label: tr('agent_won_leads'),
         ),
         _LegendItem(
-          color: Color(0xFF1976D2),
-          label: 'Pending Follow-ups',
+          color: const Color(0xFF1976D2),
+          label: tr('agent_pending_followups'),
         ),
       ],
     );
@@ -3028,7 +3029,7 @@ class _AgentComparisonBarChart extends StatelessWidget {
     final chartRows = rows.take(6).toList();
 
     if (chartRows.isEmpty) {
-      return const Center(child: Text('No agent data yet'));
+      return Center(child: Text(tr('agent_no_data')));
     }
 
     final maxValue = chartRows.fold<int>(
@@ -3136,55 +3137,55 @@ class _DesktopAgentHeaderRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFF30260A)),
       ),
-      child: const Row(
+      child: Row(
         children: [
           Expanded(
             flex: 22,
             child: Text(
-              'Agent',
-              style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
+              tr('agent_col_agent'),
+              style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
           Expanded(
             flex: 10,
             child: Text(
-              'Total',
-              style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
+              tr('agent_col_total'),
+              style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
           Expanded(
             flex: 10,
             child: Text(
-              'Won',
-              style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
+              tr('agent_col_won'),
+              style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
           Expanded(
             flex: 10,
             child: Text(
-              'Pending',
-              style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
+              tr('agent_col_pending'),
+              style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
           Expanded(
             flex: 10,
             child: Text(
-              'Overdue',
-              style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
+              tr('agent_col_overdue'),
+              style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
           Expanded(
             flex: 18,
             child: Text(
-              'Lead Mix',
-              style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
+              tr('agent_col_lead_mix'),
+              style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
           Expanded(
             flex: 20,
             child: Text(
-              'Follow-up Mix',
-              style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
+              tr('agent_col_followup_mix'),
+              style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
         ],
@@ -3443,16 +3444,16 @@ class _MobileAgentCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _metric('Total', totalLeads),
-              _metric('Won', wonLeads),
-              _metric('Pending', pendingFollowUps),
-              _metric('Overdue', overdueFollowUps),
+              _metric(tr('agent_col_total'), totalLeads),
+              _metric(tr('agent_col_won'), wonLeads),
+              _metric(tr('agent_col_pending'), pendingFollowUps),
+              _metric(tr('agent_col_overdue'), overdueFollowUps),
             ],
           ),
           const SizedBox(height: 14),
-          const Text(
-            'Lead Breakdown',
-            style: TextStyle(
+          Text(
+            tr('agent_lead_breakdown'),
+            style: const TextStyle(
               color: Color(0xFFD4AF37),
               fontWeight: FontWeight.w800,
             ),
@@ -3462,17 +3463,17 @@ class _MobileAgentCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _metric('New', newLeads),
-              _metric('Contacted', contactedLeads),
-              _metric('Qualified', qualifiedLeads),
-              _metric('Lost', lostLeads),
-              _metric('Important', importantLeads),
+              _metric(tr('status_new'), newLeads),
+              _metric(tr('status_contacted'), contactedLeads),
+              _metric(tr('status_qualified'), qualifiedLeads),
+              _metric(tr('status_lost'), lostLeads),
+              _metric(tr('stats_important'), importantLeads),
             ],
           ),
           const SizedBox(height: 14),
-          const Text(
-            'Follow-up Breakdown',
-            style: TextStyle(
+          Text(
+            tr('agent_followup_breakdown'),
+            style: const TextStyle(
               color: Color(0xFFD4AF37),
               fontWeight: FontWeight.w800,
             ),
@@ -3482,8 +3483,8 @@ class _MobileAgentCard extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
-              _metric('Done', doneFollowUps),
-              _metric('Missed', missedFollowUps),
+              _metric(tr('status_done'), doneFollowUps),
+              _metric(tr('status_missed'), missedFollowUps),
             ],
           ),
         ],

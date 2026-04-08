@@ -1821,6 +1821,7 @@
 // }
 
 
+import 'package:easy_localization/easy_localization.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -1924,7 +1925,7 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
         child: Column(
           children: [
             _StatisticsHeader(
-              title: widget.customTitle ?? 'Statistics',
+              title: widget.customTitle ?? tr('stats_title'),
               showOwnHeader: widget.showOwnHeader,
               profileName: _displayName(),
               role: _role,
@@ -1945,11 +1946,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
 
   Widget _buildBody(bool isDesktop) {
     if (!_isAdmin) {
-      return const _StateCard(
+      return _StateCard(
         icon: Icons.lock_outline_rounded,
-        iconColor: Color(0xFFD4AF37),
-        title: 'Admin access only',
-        message: 'Only admins can view CRM statistics.',
+        iconColor: const Color(0xFFD4AF37),
+        title: tr('stats_admin_only_title'),
+        message: tr('stats_admin_only_message'),
       );
     }
 
@@ -1961,13 +1962,13 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
       return _StateCard(
         icon: Icons.error_outline_rounded,
         iconColor: Colors.redAccent,
-        title: 'Failed to load statistics',
+        title: tr('stats_error'),
         message: _error!,
         actions: [
           FilledButton.icon(
             onPressed: _loadStats,
             icon: const Icon(Icons.refresh_rounded),
-            label: const Text('Retry'),
+            label: Text(tr('btn_retry')),
           ),
         ],
       );
@@ -1990,30 +1991,30 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
     final missedFollowUps = _toInt(followUpStats['missed_followups']);
 
     final kpis = <_StatTileData>[
-      _StatTileData('Total Leads', totalLeads, Icons.people_outline_rounded),
-      _StatTileData('Important', importantLeads, Icons.star_outline_rounded),
+      _StatTileData(tr('stats_total_leads'), totalLeads, Icons.people_outline_rounded),
+      _StatTileData(tr('stats_important'), importantLeads, Icons.star_outline_rounded),
       _StatTileData(
-        'Pending Follow-ups',
+        tr('stats_pending_followups'),
         pendingFollowUps,
         Icons.schedule_rounded,
       ),
-      _StatTileData('Overdue', overdueFollowUps, Icons.warning_amber_rounded),
+      _StatTileData(tr('stats_overdue'), overdueFollowUps, Icons.warning_amber_rounded),
     ];
 
     final leadBreakdown = <_SummaryLine>[
-      _SummaryLine('New', newLeads),
-      _SummaryLine('Contacted', contactedLeads),
-      _SummaryLine('Qualified', qualifiedLeads),
-      _SummaryLine('Won', wonLeads),
-      _SummaryLine('Lost', lostLeads),
-      _SummaryLine('Important', importantLeads),
+      _SummaryLine(tr('status_new'), newLeads),
+      _SummaryLine(tr('status_contacted'), contactedLeads),
+      _SummaryLine(tr('status_qualified'), qualifiedLeads),
+      _SummaryLine(tr('status_won'), wonLeads),
+      _SummaryLine(tr('status_lost'), lostLeads),
+      _SummaryLine(tr('stats_important'), importantLeads),
     ];
 
     final followUpBreakdown = <_SummaryLine>[
-      _SummaryLine('Pending', pendingFollowUps),
-      _SummaryLine('Overdue', overdueFollowUps),
-      _SummaryLine('Done', doneFollowUps),
-      _SummaryLine('Missed', missedFollowUps),
+      _SummaryLine(tr('status_pending'), pendingFollowUps),
+      _SummaryLine(tr('stats_overdue'), overdueFollowUps),
+      _SummaryLine(tr('status_done'), doneFollowUps),
+      _SummaryLine(tr('status_missed'), missedFollowUps),
     ];
 
     return RefreshIndicator(
@@ -2037,8 +2038,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
             children: [
               Expanded(
                 child: _Panel(
-                  title: 'Lead Stage Distribution',
-                  subtitle: 'Current lead mix by pipeline stage',
+                  title: tr('stats_lead_stage'),
+                  subtitle: tr('stats_lead_stage_subtitle'),
                   child: SizedBox(
                     height: 280,
                     child: _LeadStageDonutChart(
@@ -2054,8 +2055,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               const SizedBox(width: 14),
               Expanded(
                 child: _Panel(
-                  title: 'Follow-up Status Distribution',
-                  subtitle: 'Current workload and completion state',
+                  title: tr('stats_followup_status'),
+                  subtitle: tr('stats_followup_status_subtitle'),
                   child: SizedBox(
                     height: 280,
                     child: _FollowUpBarChart(
@@ -2072,8 +2073,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               : Column(
             children: [
               _Panel(
-                title: 'Lead Stage Distribution',
-                subtitle: 'Current lead mix by pipeline stage',
+                title: tr('stats_lead_stage'),
+                subtitle: tr('stats_lead_stage_subtitle'),
                 child: SizedBox(
                   height: 280,
                   child: _LeadStageDonutChart(
@@ -2087,8 +2088,8 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               ),
               const SizedBox(height: 14),
               _Panel(
-                title: 'Follow-up Status Distribution',
-                subtitle: 'Current workload and completion state',
+                title: tr('stats_followup_status'),
+                subtitle: tr('stats_followup_status_subtitle'),
                 child: SizedBox(
                   height: 280,
                   child: _FollowUpBarChart(
@@ -2108,14 +2109,14 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
             children: [
               Expanded(
                 child: _SummaryPanel(
-                  title: 'Lead Pipeline Breakdown',
+                  title: tr('stats_pipeline_breakdown'),
                   items: leadBreakdown,
                 ),
               ),
               const SizedBox(width: 14),
               Expanded(
                 child: _SummaryPanel(
-                  title: 'Follow-up Breakdown',
+                  title: tr('stats_followup_breakdown'),
                   items: followUpBreakdown,
                 ),
               ),
@@ -2124,12 +2125,12 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               : Column(
             children: [
               _SummaryPanel(
-                title: 'Lead Pipeline Breakdown',
+                title: tr('stats_pipeline_breakdown'),
                 items: leadBreakdown,
               ),
               const SizedBox(height: 14),
               _SummaryPanel(
-                title: 'Follow-up Breakdown',
+                title: tr('stats_followup_breakdown'),
                 items: followUpBreakdown,
               ),
             ],
@@ -2185,7 +2186,7 @@ class _StatisticsHeader extends StatelessWidget {
                 FilledButton.icon(
                   onPressed: onRefresh,
                   icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Refresh'),
+                  label: Text(tr('btn_refresh')),
                 ),
                 const SizedBox(width: 12),
                 if (isWide)
@@ -2199,10 +2200,10 @@ class _StatisticsHeader extends StatelessWidget {
                     onSelected: (value) async {
                       if (value == 'logout') await onLogout();
                     },
-                    itemBuilder: (_) => const [
+                    itemBuilder: (_) => [
                       PopupMenuItem<String>(
                         value: 'logout',
-                        child: Text('Logout'),
+                        child: Text(tr('btn_logout')),
                       ),
                     ],
                     icon: const Icon(Icons.account_circle_outlined),
@@ -2267,10 +2268,10 @@ class _ProfileMenu extends StatelessWidget {
           onSelected: (value) async {
             if (value == 'logout') await onLogout();
           },
-          itemBuilder: (_) => const [
+          itemBuilder: (_) => [
             PopupMenuItem<String>(
               value: 'logout',
-              child: Text('Logout'),
+              child: Text(tr('btn_logout')),
             ),
           ],
           icon: const Icon(Icons.account_circle_outlined),
@@ -2435,17 +2436,17 @@ class _LeadStageDonutChart extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final sections = [
-      _ChartLegendItem('New', newLeads, const Color(0xFFD4AF37)),
-      _ChartLegendItem('Contacted', contactedLeads, const Color(0xFF1976D2)),
-      _ChartLegendItem('Qualified', qualifiedLeads, const Color(0xFF2E7D32)),
-      _ChartLegendItem('Won', wonLeads, const Color(0xFF00A86B)),
-      _ChartLegendItem('Lost', lostLeads, const Color(0xFFB00020)),
+      _ChartLegendItem(tr('status_new'), newLeads, const Color(0xFFD4AF37)),
+      _ChartLegendItem(tr('status_contacted'), contactedLeads, const Color(0xFF1976D2)),
+      _ChartLegendItem(tr('status_qualified'), qualifiedLeads, const Color(0xFF2E7D32)),
+      _ChartLegendItem(tr('status_won'), wonLeads, const Color(0xFF00A86B)),
+      _ChartLegendItem(tr('status_lost'), lostLeads, const Color(0xFFB00020)),
     ];
 
     final total = sections.fold<int>(0, (sum, item) => sum + item.value);
 
     if (total == 0) {
-      return const Center(child: Text('No lead data yet'));
+      return Center(child: Text(tr('stats_no_data')));
     }
 
     return Row(
@@ -2523,7 +2524,7 @@ class _FollowUpBarChart extends StatelessWidget {
             sideTitles: SideTitles(
               showTitles: true,
               getTitlesWidget: (value, meta) {
-                const labels = ['Pending', 'Overdue', 'Done', 'Missed'];
+                final labels = [tr('status_pending'), tr('stats_overdue'), tr('status_done'), tr('status_missed')];
                 final idx = value.toInt();
                 if (idx < 0 || idx >= labels.length) {
                   return const SizedBox.shrink();

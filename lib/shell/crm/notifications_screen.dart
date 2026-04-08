@@ -1886,6 +1886,7 @@
 
 import 'dart:async';
 
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -2033,7 +2034,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Notification dismissed.')),
+        SnackBar(content: Text(tr('notifications_dismissed'))),
       );
     } catch (e) {
       if (!mounted) return;
@@ -2052,7 +2053,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to dismiss notification: $e')),
+        SnackBar(content: Text(tr('notifications_dismiss_failed', namedArgs: {'error': e.toString()}))),
       );
     }
   }
@@ -2109,7 +2110,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Section cleared.')),
+        SnackBar(content: Text(tr('notifications_section_cleared'))),
       );
     } catch (e) {
       if (!mounted) return;
@@ -2118,7 +2119,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to clear section: $e')),
+        SnackBar(content: Text(tr('notifications_clear_failed', namedArgs: {'error': e.toString()}))),
       );
     }
   }
@@ -2852,7 +2853,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         child: Column(
           children: [
             _NotificationsHeader(
-              title: widget.customTitle ?? 'Notifications',
+              title: widget.customTitle ?? tr('notifications_title'),
               showOwnHeader: widget.showOwnHeader,
               profileName: _displayName(),
               role: _role,
@@ -2881,13 +2882,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
       return _NotificationsStateCard(
         icon: Icons.error_outline_rounded,
         iconColor: Colors.redAccent,
-        title: 'Failed to load alerts',
+        title: tr('notifications_error'),
         message: _error!,
         actions: [
           FilledButton.icon(
             onPressed: _loadAlerts,
             icon: const Icon(Icons.refresh_rounded),
-            label: const Text('Retry'),
+            label: Text(tr('btn_retry')),
           ),
         ],
       );
@@ -2899,12 +2900,11 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         _assignmentLogs.isNotEmpty;
 
     if (!hasAnything) {
-      return const _NotificationsStateCard(
+      return  _NotificationsStateCard(
         icon: Icons.notifications_none_rounded,
         iconColor: Color(0xFFD4AF37),
-        title: 'No alerts right now',
-        message:
-        'Overdue items, upcoming follow-ups, and assignment changes will appear here.',
+        title: tr('notifications_empty_title'),
+        message: tr('notifications_empty_message')
       );
     }
 
@@ -2914,12 +2914,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         padding: EdgeInsets.fromLTRB(isDesktop ? 20 : 14, 14, isDesktop ? 20 : 14, 28),
         children: [
           _NotificationSection(
-            title: 'Overdue Follow-ups',
+            title: 'home_overdue_followups'.tr(),
             icon: Icons.warning_amber_rounded,
             count: _overdueFollowUps.length,
             trailing: _SectionActionButton(
               enabled: _overdueFollowUps.isNotEmpty,
-              label: 'Clear all',
+              label: 'notifications_clear_all'.tr(),
               onPressed: () => _clearSection(
                 category: 'overdue_followups',
                 entityType: 'follow_up',
@@ -2927,7 +2927,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               ),
             ),
             child: _overdueFollowUps.isEmpty
-                ? const _SectionEmptyText('No overdue follow-ups.')
+                ?  _SectionEmptyText('notifications_no_overdue'.tr())
                 : isDesktop
                 ? Column(
               children: [
@@ -2978,12 +2978,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ),
           const SizedBox(height: 14),
           _NotificationSection(
-            title: 'Due Today',
+            title: 'notifications_today'.tr(),
             icon: Icons.today_outlined,
             count: _dueTodayFollowUps.length,
             trailing: _SectionActionButton(
               enabled: _dueTodayFollowUps.isNotEmpty,
-              label: 'Clear all',
+              label: 'notifications_clear_all'.tr(),
               onPressed: () => _clearSection(
                 category: 'due_today_followups',
                 entityType: 'follow_up',
@@ -2991,7 +2991,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               ),
             ),
             child: _dueTodayFollowUps.isEmpty
-                ? const _SectionEmptyText('No follow-ups due today.')
+                ?  _SectionEmptyText('notifications_no_today'.tr())
                 : isDesktop
                 ? Column(
               children: [
@@ -3040,14 +3040,14 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   .toList(),
             ),
           ),
-          const SizedBox(height: 14),
+           SizedBox(height: 14),
           _NotificationSection(
-            title: 'Due Tomorrow',
+            title: 'notifications_tomorrow'.tr(),
             icon: Icons.event_outlined,
             count: _dueTomorrowFollowUps.length,
             trailing: _SectionActionButton(
               enabled: _dueTomorrowFollowUps.isNotEmpty,
-              label: 'Clear all',
+              label: 'notifications_clear_all'.tr(),
               onPressed: () => _clearSection(
                 category: 'due_tomorrow_followups',
                 entityType: 'follow_up',
@@ -3056,7 +3056,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               ),
             ),
             child: _dueTomorrowFollowUps.isEmpty
-                ? const _SectionEmptyText('No follow-ups due tomorrow.')
+                ?  _SectionEmptyText('notifications_no_tomorrow'.tr())
                 : isDesktop
                 ? Column(
               children: [
@@ -3107,12 +3107,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           ),
           const SizedBox(height: 14),
           _NotificationSection(
-            title: 'Recent Assignments',
+            title: 'notifications_recent'.tr(),
             icon: Icons.share_outlined,
             count: _assignmentLogs.length,
             trailing: _SectionActionButton(
               enabled: _assignmentLogs.isNotEmpty,
-              label: 'Clear all',
+              label: 'notifications_clear_all'.tr(),
               onPressed: () => _clearSection(
                 category: 'assignment_logs',
                 entityType: 'activity_log',
@@ -3120,7 +3120,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               ),
             ),
             child: _assignmentLogs.isEmpty
-                ? const _SectionEmptyText('No recent assignment activity.')
+                ?  _SectionEmptyText('notifications_no_recent'.tr())
                 : isDesktop
                 ? Column(
               children: [
@@ -3248,7 +3248,7 @@ class _NotificationsHeader extends StatelessWidget {
                 FilledButton.icon(
                   onPressed: onRefresh,
                   icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Refresh'),
+                  label: Text(tr('btn_refresh')),
                 ),
                 const SizedBox(width: 12),
                 if (isWide)
@@ -3262,10 +3262,10 @@ class _NotificationsHeader extends StatelessWidget {
                     onSelected: (value) async {
                       if (value == 'logout') await onLogout();
                     },
-                    itemBuilder: (_) => const [
+                    itemBuilder: (_) =>  [
                       PopupMenuItem<String>(
                         value: 'logout',
-                        child: Text('Logout'),
+                        child: Text('btn_logout'.tr()),
                       ),
                     ],
                     icon: const Icon(Icons.account_circle_outlined),
@@ -3276,7 +3276,7 @@ class _NotificationsHeader extends StatelessWidget {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              'In-app alerts for follow-up urgency and recent assignment activity.',
+              'notifications_subtitle'.tr(),
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Colors.white70,
               ),
@@ -3330,10 +3330,10 @@ class _NotificationsProfileMenu extends StatelessWidget {
           onSelected: (value) async {
             if (value == 'logout') await onLogout();
           },
-          itemBuilder: (_) => const [
+          itemBuilder: (_) => [
             PopupMenuItem<String>(
               value: 'logout',
-              child: Text('Logout'),
+              child: Text(tr('btn_logout')),
             ),
           ],
           icon: const Icon(Icons.account_circle_outlined),
@@ -3429,40 +3429,40 @@ class _DesktopFollowUpAlertHeader extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFF30260A)),
       ),
-      child: const Row(
+      child:  Row(
         children: [
           Expanded(
             flex: 28,
             child: Text(
-              'Lead',
+              'followup_col_lead'.tr(),
               style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
           Expanded(
             flex: 18,
             child: Text(
-              'Due',
+              'followup_col_due'.tr(),
               style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
           Expanded(
             flex: 18,
             child: Text(
-              'Assigned To',
+              'followup_col_assigned_to'.tr(),
               style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
           Expanded(
             flex: 14,
             child: Text(
-              'Status',
+              'followup_col_status'.tr(),
               style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
           Expanded(
             flex: 24,
             child: Text(
-              'Notes',
+              'followup_col_notes'.tr(),
               style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
@@ -3504,11 +3504,11 @@ class _DesktopFollowUpAlertRow extends StatelessWidget {
   String get _toneLabel {
     switch (tone) {
       case _AlertTone.overdue:
-        return 'OVERDUE';
+        return tr('notifications_status_overdue');
       case _AlertTone.today:
-        return 'TODAY';
+        return tr('notifications_status_today');
       case _AlertTone.tomorrow:
-        return 'TOMORROW';
+        return tr('notifications_status_tomorrow');
     }
   }
 
@@ -3572,7 +3572,7 @@ class _DesktopFollowUpAlertRow extends StatelessWidget {
             child: IconButton(
               onPressed: onDismiss,
               icon: const Icon(Icons.close_rounded),
-              tooltip: 'Dismiss',
+              tooltip: tr('notifications_dismiss'),
             ),
           ),
         ],
@@ -3612,11 +3612,11 @@ class _MobileFollowUpAlertCard extends StatelessWidget {
   String get _toneLabel {
     switch (tone) {
       case _AlertTone.overdue:
-        return 'OVERDUE';
+        return tr('notifications_status_overdue');
       case _AlertTone.today:
-        return 'DUE TODAY';
+        return tr('notifications_status_due_today');
       case _AlertTone.tomorrow:
-        return 'DUE TOMORROW';
+        return tr('notifications_status_due_tomorrow');
     }
   }
 
@@ -3647,16 +3647,16 @@ class _MobileFollowUpAlertCard extends StatelessWidget {
               IconButton(
                 onPressed: onDismiss,
                 icon: const Icon(Icons.close_rounded),
-                tooltip: 'Dismiss',
+                tooltip: tr('notifications_dismiss'),
               ),
             ],
           ),
           const SizedBox(height: 8),
           _AlertPill(label: _toneLabel, color: _toneColor),
           const SizedBox(height: 10),
-          Text('Due: $dueAt'),
+          Text(tr('notifications_due', namedArgs: {'date': dueAt})),
           const SizedBox(height: 4),
-          Text('Assigned to: $assignee'),
+          Text(tr('notifications_assigned_to', namedArgs: {'name': assignee})),
           if (notes.isNotEmpty) ...[
             const SizedBox(height: 8),
             Text(
@@ -3685,44 +3685,44 @@ class _DesktopAssignmentAlertHeader extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFF30260A)),
       ),
-      child: const Row(
+      child: Row(
         children: [
           Expanded(
             flex: 24,
             child: Text(
-              'Lead',
-              style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
+              tr('notifications_col_lead'),
+              style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
           Expanded(
             flex: 18,
             child: Text(
-              'Changed By',
-              style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
+              tr('notifications_col_changed_by'),
+              style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
           Expanded(
             flex: 18,
             child: Text(
-              'From',
-              style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
+              tr('notifications_col_from'),
+              style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
           Expanded(
             flex: 18,
             child: Text(
-              'To',
-              style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
+              tr('notifications_col_to'),
+              style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
           Expanded(
             flex: 16,
             child: Text(
-              'At',
-              style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
+              tr('notifications_col_at'),
+              style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
-          SizedBox(width: 44),
+          const SizedBox(width: 44),
         ],
       ),
     );
@@ -3804,7 +3804,7 @@ class _DesktopAssignmentAlertRow extends StatelessWidget {
             child: IconButton(
               onPressed: onDismiss,
               icon: const Icon(Icons.close_rounded),
-              tooltip: 'Dismiss',
+              tooltip: tr('notifications_dismiss'),
             ),
           ),
         ],
@@ -3859,23 +3859,23 @@ class _MobileAssignmentAlertCard extends StatelessWidget {
               IconButton(
                 onPressed: onDismiss,
                 icon: const Icon(Icons.close_rounded),
-                tooltip: 'Dismiss',
+                tooltip: tr('notifications_dismiss'),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Text('Changed by: $actorLabel'),
+          Text(tr('notifications_changed_by', namedArgs: {'name': actorLabel})),
           const SizedBox(height: 4),
-          Text('From: $oldOwnerLabel'),
+          Text(tr('notifications_from', namedArgs: {'name': oldOwnerLabel})),
           const SizedBox(height: 4),
-          Text('To: $newOwnerLabel'),
+          Text(tr('notifications_to', namedArgs: {'name': newOwnerLabel})),
           const SizedBox(height: 4),
-          Text('At: $createdAt'),
+          Text(tr('notifications_at', namedArgs: {'time': createdAt})),
           if (becameUnassigned) ...[
             const SizedBox(height: 8),
-            const Text(
-              'This lead is currently unassigned.',
-              style: TextStyle(
+            Text(
+              tr('notifications_unassigned'),
+              style: const TextStyle(
                 color: Color(0xFFFFB74D),
                 fontWeight: FontWeight.w700,
               ),

@@ -120,6 +120,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../core/widgets/laguage_switcher.dart';
 import '../login_screen.dart';
 import '../main.dart';
 import '../services/push_notification_service.dart';
@@ -210,7 +211,7 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
-      return const Scaffold(
+      return  Scaffold(
         backgroundColor: Color(0xFF0A0A0A),
         body: Center(child: CircularProgressIndicator()),
       );
@@ -218,6 +219,11 @@ class _AppShellState extends State<AppShell> {
 
     if (_error != null) {
       return Scaffold(
+        appBar: AppBar(
+          actions: [
+            LanguageSwitcher(),
+          ],
+        ),
         backgroundColor: const Color(0xFF0A0A0A),
         body: Center(
           child: Padding(

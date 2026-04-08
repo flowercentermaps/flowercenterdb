@@ -1,3 +1,4 @@
+import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -192,12 +193,12 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
 
   String _profileLabel(String? userId) {
     final id = _text(userId);
-    if (id.isEmpty) return 'Unassigned';
+    if (id.isEmpty) return tr('profile_unassigned');
     final p = _profileMap[id];
-    if (p == null) return 'Unknown';
+    if (p == null) return tr('profile_unknown');
     final fullName = _text(p['full_name']);
     final email = _text(p['email']);
-    return fullName.isNotEmpty ? fullName : (email.isNotEmpty ? email : 'Unknown');
+    return fullName.isNotEmpty ? fullName : (email.isNotEmpty ? email : tr('profile_unknown'));
   }
 
   String _formatDate(dynamic value) {
@@ -251,7 +252,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
             FilledButton.icon(
               onPressed: _loadData,
               icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Retry'),
+              label: Text(tr('btn_retry')),
             ),
           ],
         ),
@@ -383,7 +384,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                       color: AppConstants.primaryColor.withOpacity(0.3)),
                 ),
                 child: Text(
-                  '${_allLeads.length} Lead${_allLeads.length == 1 ? '' : 's'}',
+                  _allLeads.length == 1 ? tr('profile_lead_singular', namedArgs: {'n': '1'}) : tr('profile_lead_plural', namedArgs: {'n': _allLeads.length.toString()}),
                   style: const TextStyle(
                     color: AppConstants.primaryColor,
                     fontWeight: FontWeight.w800,
@@ -413,44 +414,44 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
         _companyTrn.isNotEmpty;
 
     return _Section(
-      title: 'Contact Information',
+      title: tr('profile_contact_info'),
       icon: Icons.contact_page_outlined,
       child: hasInfo
           ? Column(
               children: [
                 if (_phone.isNotEmpty)
                   _InfoRow(
-                      label: 'Phone',
+                      label: tr('profile_field_phone'),
                       value: _phone,
                       icon: Icons.phone_outlined,
                       onTap: () => _openWhatsApp(_phone)),
                 if (_email.isNotEmpty)
                   _InfoRow(
-                      label: 'Email',
+                      label: tr('profile_field_email'),
                       value: _email,
                       icon: Icons.email_outlined),
                 if (_companyName.isNotEmpty)
                   _InfoRow(
-                      label: 'Company',
+                      label: tr('profile_field_company'),
                       value: _companyName,
                       icon: Icons.business_outlined),
                 if (_companyTrn.isNotEmpty)
                   _InfoRow(
-                      label: 'TRN',
+                      label: tr('profile_field_trn'),
                       value: _companyTrn,
                       icon: Icons.numbers_outlined),
                 if (_leadType.isNotEmpty)
                   _InfoRow(
-                      label: 'Type',
+                      label: tr('profile_field_type'),
                       value: _leadType.toUpperCase(),
                       icon: Icons.person_outline_rounded),
               ],
             )
-          : const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
+          : Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
-                'No contact information available.',
-                style: TextStyle(color: Colors.white38),
+                tr('profile_no_contact'),
+                style: const TextStyle(color: Colors.white38),
               ),
             ),
     );
@@ -458,14 +459,14 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
 
   Widget _buildLeadsSection() {
     return _Section(
-      title: 'Lead History',
+      title: tr('profile_lead_history'),
       icon: Icons.history_rounded,
       child: _allLeads.isEmpty
-          ? const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
+          ? Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
-                'No leads found.',
-                style: TextStyle(color: Colors.white38),
+                tr('profile_no_leads'),
+                style: const TextStyle(color: Colors.white38),
               ),
             )
           : Column(
@@ -476,7 +477,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                     ? _text(lead['name'])
                     : (_text(lead['company_name']).isNotEmpty
                         ? _text(lead['company_name'])
-                        : 'Unnamed Lead');
+                        : tr('profile_unnamed_lead'));
 
                 return Container(
                   margin: const EdgeInsets.only(bottom: 10),
@@ -525,7 +526,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                               size: 13, color: Colors.white38),
                           const SizedBox(width: 4),
                           Text(
-                            'Owner: ${_profileLabel(lead['owner_id'])}',
+                            tr('profile_owner', namedArgs: {'name': _profileLabel(lead['owner_id'])}),
                             style: const TextStyle(
                                 color: Colors.white54, fontSize: 12),
                           ),
@@ -557,7 +558,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
 
   Widget _buildFollowUpsSection() {
     return _Section(
-      title: 'Follow-Up History',
+      title: tr('profile_followup_history'),
       icon: Icons.event_note_outlined,
       child: Column(
         children: _followUps.map((fu) {
@@ -600,7 +601,7 @@ class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Due: ${_formatDate(fu['due_at'])}',
+                        tr('profile_due', namedArgs: {'date': _formatDate(fu['due_at'])}),
                         style: const TextStyle(
                             color: Colors.white54, fontSize: 12),
                       ),
