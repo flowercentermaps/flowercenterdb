@@ -1991,13 +1991,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
         .subscribe();
   }
 
-  void _scheduleRealtimeRefresh() {
-    _realtimeRefreshDebounce?.cancel();
-    _realtimeRefreshDebounce = Timer(const Duration(milliseconds: 350), () {
-      if (!mounted) return;
-      _loadAlerts();
-    });
-  }
+  // void _scheduleRealtimeRefresh() {
+  //   _realtimeRefreshDebounce?.cancel();
+  //   _realtimeRefreshDebounce = Timer(const Duration(milliseconds: 350), () {
+  //     if (!mounted) return;
+  //     _loadAlerts();
+  //   });
+  // }
 
   Future<void> _dismissOne({
     required String category,

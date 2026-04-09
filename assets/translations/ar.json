@@ -20,6 +20,11 @@
 
   "btn_save": "حفظ",
   "btn_cancel": "إلغاء",
+  "btn_delete": "حذف",
+  "lead_delete_confirm_title": "حذف العميل المحتمل؟",
+  "lead_delete_confirm_body": "سيتم حذف هذا العميل المحتمل وجميع البيانات المرتبطة به بشكل نهائي. لا يمكن التراجع عن هذا الإجراء.",
+  "lead_deleted": "تم حذف العميل المحتمل بنجاح.",
+  "lead_delete_failed": "فشل حذف العميل المحتمل: {error}",
   "btn_edit": "تعديل",
   "btn_create": "إنشاء",
   "btn_delete": "حذف",

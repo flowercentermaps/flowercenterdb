@@ -2617,6 +2617,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
   bool get _isReadOnly => _isViewer || _isAccountant;
   bool get _canCreateLead => (_isAdmin || _isSales) && !_isReadOnly;
   bool get _canEditLead => (_isAdmin || _isSales) && !_isReadOnly;
+  bool get _canDeleteLead => _isAdmin && !_isReadOnly;
   bool get _canAssignLeads =>
       _isAdmin && widget.profile['can_assign_leads'] == true;
 
@@ -2849,6 +2850,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
         title: tr('lead_form_create'),
         submitLabel: tr('btn_create'),
         currentUserId: _currentUserId,
+        availableUsers: _isAdmin ? _assignableUsers : const [],
       ),
     );
 
@@ -2916,6 +2918,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
         submitLabel: tr('btn_save'),
         initialLead: lead,
         currentUserId: _currentUserId,
+        availableUsers: _isAdmin ? _assignableUsers : const [],
       ),
     );
 
@@ -3065,6 +3068,53 @@ class _LeadsScreenState extends State<LeadsScreen> {
     }
   }
 
+  Future<void> _deleteLead(Map<String, dynamic> lead) async {
+    final leadId = _text(lead['id']);
+    if (leadId.isEmpty) return;
+
+    final name = _text(lead['name']);
+    final company = _text(lead['company_name']);
+    final label = name.isNotEmpty ? name : (company.isNotEmpty ? company : 'lead_unnamed'.tr());
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('lead_delete_confirm_title'.tr()),
+        content: Text('lead_delete_confirm_body'.tr()),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: Text('btn_cancel'.tr()),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: Text('btn_delete'.tr()),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    try {
+      await _supabase.from('leads').delete().eq('id', leadId);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('lead_deleted'.tr())),
+      );
+      await _loadData();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('lead_delete_failed'.tr(namedArgs: {'error': e.toString()})),
+        ),
+      );
+    }
+  }
+
   Future<void> _sendAssignmentPush({
     required String leadId,
     required String leadLabel,
@@ -3204,10 +3254,10 @@ class _LeadsScreenState extends State<LeadsScreen> {
 
   String _text(dynamic value) => (value ?? '').toString().trim();
 
-  DateTime? _parseDateTime(dynamic value) {
-    if (value == null) return null;
-    return DateTime.tryParse(value.toString())?.toLocal();
-  }
+  // DateTime? _parseDateTime(dynamic value) {
+  //   if (value == null) return null;
+  //   return DateTime.tryParse(value.toString())?.toLocal();
+  // }
 
   String _displayName() {
     final fullName = _text(widget.profile['full_name']);
@@ -3320,56 +3370,57 @@ class _LeadsScreenState extends State<LeadsScreen> {
       )
           : null,
       body: SafeArea(
-        child: Column(
-          children: [
-            _LeadsHeader(
-              title: widget.customTitle ?? 'leads_title'.tr(),
-              showOwnHeader: widget.showOwnHeader,
-              searchController: _searchController,
-              selectedStatus: _selectedStatus,
-              statuses: _statuses,
-              statusLabelBuilder: _statusLabel,
-              importantOnly: _importantOnly,
-              visibleCount: _filteredLeads.length,
-              totalCount: _allLeads.length,
-              profileName: _displayName(),
-              role: _role,
-              isReadOnly: _isReadOnly,
-              canCreate: _canCreateLead && widget.allowCreate,
-              canAssign: _canAssignLeads,
-              showDesktopCreateAction:
-              isDesktop && _canCreateLead && widget.allowCreate,
-              scope: _scope,
-              allowScopeSelection: !_isSales,
-              onScopeChanged: (value) {
-                setState(() {
-                  _scope = value;
-                  _applyFilters();
-                });
-              },
-              onCreate: _openCreateLeadDialog,
-              onStatusChanged: (value) {
-                setState(() {
-                  _selectedStatus = value;
-                  _applyFilters();
-                });
-              },
-              onImportantOnlyChanged: (value) {
-                setState(() {
-                  _importantOnly = value;
-                  _applyFilters();
-                });
-              },
-              onClearFilters: _clearFilters,
-              onLogout: widget.onLogout,
-            ),
-            Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 180),
-                child: _buildBody(isDesktop),
+        child: NestedScrollView(
+          floatHeaderSlivers: true,
+          headerSliverBuilder: (context, innerBoxIsScrolled) => [
+            SliverToBoxAdapter(
+              child: _LeadsHeader(
+                title: widget.customTitle ?? 'leads_title'.tr(),
+                showOwnHeader: widget.showOwnHeader,
+                searchController: _searchController,
+                selectedStatus: _selectedStatus,
+                statuses: _statuses,
+                statusLabelBuilder: _statusLabel,
+                importantOnly: _importantOnly,
+                visibleCount: _filteredLeads.length,
+                totalCount: _allLeads.length,
+                profileName: _displayName(),
+                role: _role,
+                isReadOnly: _isReadOnly,
+                canCreate: _canCreateLead && widget.allowCreate,
+                canAssign: _canAssignLeads,
+                showDesktopCreateAction:
+                isDesktop && _canCreateLead && widget.allowCreate,
+                scope: _scope,
+                allowScopeSelection: !_isSales,
+                onScopeChanged: (value) {
+                  setState(() {
+                    _scope = value;
+                    _applyFilters();
+                  });
+                },
+                onCreate: _openCreateLeadDialog,
+                onStatusChanged: (value) {
+                  setState(() {
+                    _selectedStatus = value;
+                    _applyFilters();
+                  });
+                },
+                onImportantOnlyChanged: (value) {
+                  setState(() {
+                    _importantOnly = value;
+                    _applyFilters();
+                  });
+                },
+                onClearFilters: _clearFilters,
+                onLogout: widget.onLogout,
               ),
             ),
           ],
+          body: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 180),
+            child: _buildBody(isDesktop),
+          ),
         ),
       ),
     );
@@ -3428,6 +3479,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
       return RefreshIndicator(
         onRefresh: _loadData,
         child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
           children: [
             const _DesktopLeadListHeader(),
@@ -3440,13 +3492,14 @@ class _LeadsScreenState extends State<LeadsScreen> {
                   ownerLabel: _profileLabel(lead['owner_id']),
                   canEdit: _canEditLead,
                   canAssign: _canAssignLeads,
+                  canDelete: _canDeleteLead,
                   missingFields: _missingFields(lead),
                   statusColor: _statusColor(_text(lead['status']).toLowerCase()),
                   onTap: () => _showLeadDetails(lead),
                   onViewProfile: () => _openCustomerProfile(lead),
                   onEdit: _canEditLead ? () => _openEditLeadDialog(lead) : null,
-                  onAssign:
-                  _canAssignLeads ? () => _openAssignDialog(lead) : null,
+                  onAssign: _canAssignLeads ? () => _openAssignDialog(lead) : null,
+                  onDelete: _canDeleteLead ? () => _deleteLead(lead) : null,
                 ),
               );
             }),
@@ -3458,6 +3511,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
     return RefreshIndicator(
       onRefresh: _loadData,
       child: ListView.builder(
+        physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 100),
         itemCount: _filteredLeads.length,
         itemBuilder: (context, index) {
@@ -3469,13 +3523,14 @@ class _LeadsScreenState extends State<LeadsScreen> {
               ownerLabel: _profileLabel(lead['owner_id']),
               canEdit: _canEditLead,
               canAssign: _canAssignLeads,
+              canDelete: _canDeleteLead,
               missingFields: _missingFields(lead),
               statusColor: _statusColor(_text(lead['status']).toLowerCase()),
               onTap: () => _showLeadDetails(lead),
               onViewProfile: () => _openCustomerProfile(lead),
               onEdit: _canEditLead ? () => _openEditLeadDialog(lead) : null,
-              onAssign:
-              _canAssignLeads ? () => _openAssignDialog(lead) : null,
+              onAssign: _canAssignLeads ? () => _openAssignDialog(lead) : null,
+              onDelete: _canDeleteLead ? () => _deleteLead(lead) : null,
             ),
           );
         },
@@ -3976,24 +4031,28 @@ class _DesktopLeadRow extends StatelessWidget {
   final String ownerLabel;
   final bool canEdit;
   final bool canAssign;
+  final bool canDelete;
   final List<String> missingFields;
   final Color statusColor;
   final VoidCallback onTap;
   final VoidCallback onViewProfile;
   final VoidCallback? onEdit;
   final VoidCallback? onAssign;
+  final VoidCallback? onDelete;
 
   const _DesktopLeadRow({
     required this.lead,
     required this.ownerLabel,
     required this.canEdit,
     required this.canAssign,
+    required this.canDelete,
     required this.missingFields,
     required this.statusColor,
     required this.onTap,
     required this.onViewProfile,
     required this.onEdit,
     required this.onAssign,
+    required this.onDelete,
   });
 
   String _text(dynamic value) => (value ?? '').toString().trim();
@@ -4201,6 +4260,13 @@ class _DesktopLeadRow extends StatelessWidget {
                           onPressed: onEdit,
                           child: Text('btn_edit'.tr()),
                         ),
+                      if (canDelete)
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline_rounded),
+                          tooltip: 'btn_delete'.tr(),
+                          color: Colors.redAccent,
+                          onPressed: onDelete,
+                        ),
                     ],
                   ),
                 ),
@@ -4218,24 +4284,28 @@ class _MobileLeadCard extends StatelessWidget {
   final String ownerLabel;
   final bool canEdit;
   final bool canAssign;
+  final bool canDelete;
   final List<String> missingFields;
   final Color statusColor;
   final VoidCallback onTap;
   final VoidCallback onViewProfile;
   final VoidCallback? onEdit;
   final VoidCallback? onAssign;
+  final VoidCallback? onDelete;
 
   const _MobileLeadCard({
     required this.lead,
     required this.ownerLabel,
     required this.canEdit,
     required this.canAssign,
+    required this.canDelete,
     required this.missingFields,
     required this.statusColor,
     required this.onTap,
     required this.onViewProfile,
     required this.onEdit,
     required this.onAssign,
+    required this.onDelete,
   });
 
   String _text(dynamic value) => (value ?? '').toString().trim();
@@ -4404,6 +4474,16 @@ class _MobileLeadCard extends StatelessWidget {
                     FilledButton(
                       onPressed: onEdit,
                       child: Text('btn_edit'.tr()),
+                    ),
+                  if (canDelete)
+                    OutlinedButton.icon(
+                      onPressed: onDelete,
+                      icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                      label: Text('btn_delete'.tr()),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.redAccent,
+                        side: const BorderSide(color: Colors.redAccent),
+                      ),
                     ),
                 ],
               ),
@@ -4839,6 +4919,7 @@ class LeadFormDialog extends StatefulWidget {
   final String submitLabel;
   final String currentUserId;
   final Map<String, dynamic>? initialLead;
+  final List<Map<String, dynamic>> availableUsers;
 
   const LeadFormDialog({
     super.key,
@@ -4846,6 +4927,7 @@ class LeadFormDialog extends StatefulWidget {
     required this.submitLabel,
     required this.currentUserId,
     this.initialLead,
+    this.availableUsers = const [],
   });
 
   @override
@@ -4866,6 +4948,7 @@ class _LeadFormDialogState extends State<LeadFormDialog> {
   late String _status;
   late bool _isImportant;
   late bool _requiresFollowUp;
+  late String? _ownerId;
 
   bool _isSubmitting = false;
 
@@ -4904,6 +4987,11 @@ class _LeadFormDialogState extends State<LeadFormDialog> {
 
     _isImportant = lead?['is_important'] == true;
     _requiresFollowUp = lead?['requires_follow_up'] == true;
+
+    final existingOwnerId = _text(lead?['owner_id']);
+    _ownerId = existingOwnerId.isNotEmpty
+        ? existingOwnerId
+        : (widget.currentUserId.isNotEmpty ? widget.currentUserId : null);
   }
 
   @override
@@ -4938,6 +5026,7 @@ class _LeadFormDialogState extends State<LeadFormDialog> {
       notes: _notesController.text.trim(),
       isImportant: _isImportant,
       requiresFollowUp: _requiresFollowUp,
+      ownerId: _ownerId,
     );
 
     Navigator.of(context).pop(result);
@@ -5162,6 +5251,28 @@ class _LeadFormDialogState extends State<LeadFormDialog> {
                       });
                     },
                   ),
+                  if (widget.availableUsers.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String?>(
+                      value: _ownerId,
+                      decoration: InputDecoration(
+                        labelText: tr('lead_owner'),
+                        prefixIcon: const Icon(Icons.person_outline),
+                      ),
+                      items: widget.availableUsers.map((user) {
+                        final id = _text(user['id']);
+                        final fullName = _text(user['full_name']);
+                        final email = _text(user['email']);
+                        final role = _text(user['role']).toUpperCase();
+                        final label = fullName.isNotEmpty ? '$fullName • $role' : '$email • $role';
+                        return DropdownMenuItem<String?>(
+                          value: id,
+                          child: Text(label, overflow: TextOverflow.ellipsis),
+                        );
+                      }).toList(),
+                      onChanged: (value) => setState(() => _ownerId = value),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   TextFormField(
                     controller: _notesController,
@@ -5248,6 +5359,7 @@ class _LeadFormResult {
   final String notes;
   final bool isImportant;
   final bool requiresFollowUp;
+  final String? ownerId;
 
   const _LeadFormResult({
     required this.name,
@@ -5260,11 +5372,18 @@ class _LeadFormResult {
     required this.notes,
     required this.isImportant,
     required this.requiresFollowUp,
+    this.ownerId,
   });
 
-  Map<String, dynamic> toInsertPayload({
-    required String currentUserId,
-  }) {
+  Map<String, dynamic> toInsertPayload({required String currentUserId}) {
+    final effectiveOwner = (ownerId != null && ownerId!.isNotEmpty)
+        ? ownerId
+        : (currentUserId.isEmpty ? null : currentUserId);
+    final assignedBy = (ownerId != null &&
+            ownerId!.isNotEmpty &&
+            ownerId != currentUserId)
+        ? currentUserId
+        : null;
     return {
       'name': name.isEmpty ? null : name,
       'phone': phone,
@@ -5276,9 +5395,9 @@ class _LeadFormResult {
       'notes': notes.isEmpty ? null : notes,
       'is_important': isImportant,
       'requires_follow_up': requiresFollowUp,
-      'owner_id': currentUserId.isEmpty ? null : currentUserId,
+      'owner_id': effectiveOwner,
       'created_by': currentUserId.isEmpty ? null : currentUserId,
-      'assigned_by': null,
+      'assigned_by': assignedBy,
     };
   }
 
@@ -5294,6 +5413,7 @@ class _LeadFormResult {
       'notes': notes.isEmpty ? null : notes,
       'is_important': isImportant,
       'requires_follow_up': requiresFollowUp,
+      if (ownerId != null && ownerId!.isNotEmpty) 'owner_id': ownerId,
       'updated_at': DateTime.now().toIso8601String(),
     };
   }
