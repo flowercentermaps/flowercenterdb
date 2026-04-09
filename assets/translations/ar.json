@@ -38,6 +38,12 @@
   "btn_open_leads": "فتح العملاء",
   "btn_open_follow_up": "فتح المتابعة",
   "btn_assignments": "التعيينات",
+  "btn_confirm": "تأكيد",
+  "lead_assign_title": "تعيين عميل",
+  "lead_assign_to": "تعيين إلى",
+  "leads_scope_all": "كل العملاء",
+  "leads_scope_unassigned": "غير معين",
+  "leads_scope_mine": "عملائي",
 
   "login_title": "تسجيل الدخول",
   "login_subtitle": "سجّل الدخول بحسابك",

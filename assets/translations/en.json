@@ -40,6 +40,12 @@
   "btn_open_leads": "Open Leads",
   "btn_open_follow_up": "Open Follow Up",
   "btn_assignments": "Assignments",
+  "btn_confirm": "Confirm",
+  "lead_assign_title": "Assign Lead",
+  "lead_assign_to": "Assign to",
+  "leads_scope_all": "All Leads",
+  "leads_scope_unassigned": "Unassigned",
+  "leads_scope_mine": "My Leads",
 
   "login_title": "Login",
   "login_subtitle": "Sign in with your account",

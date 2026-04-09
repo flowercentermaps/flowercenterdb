@@ -3798,13 +3798,13 @@ class _ScopeChips extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final items = <({LeadScope scope, String label, IconData icon})>[
-      (scope: LeadScope.allLeads, label: 'All Leads', icon: Icons.people_alt),
+      (scope: LeadScope.allLeads, label: tr('leads_scope_all'), icon: Icons.people_alt),
       (
       scope: LeadScope.unassigned,
-      label: 'Unassigned',
+      label: tr('leads_scope_unassigned'),
       icon: Icons.person_off_outlined
       ),
-      (scope: LeadScope.myLeads, label: 'My Leads', icon: Icons.person_outline),
+      (scope: LeadScope.myLeads, label: tr('leads_scope_mine'), icon: Icons.person_outline),
     ];
 
     return Align(
@@ -5383,7 +5383,7 @@ class _AssignLeadDialogState extends State<AssignLeadDialog> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'Assign Lead',
+                    tr('lead_assign_title'),
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
                       fontWeight: FontWeight.w900,
                     ),
@@ -5399,13 +5399,13 @@ class _AssignLeadDialogState extends State<AssignLeadDialog> {
                   const SizedBox(height: 16),
                   DropdownButtonFormField<String?>(
                     value: _selectedUserId,
-                    decoration: const InputDecoration(
-                      labelText: 'Assign to',
+                    decoration: InputDecoration(
+                      labelText: tr('lead_assign_to'),
                     ),
                     items: [
-                      const DropdownMenuItem<String?>(
+                      DropdownMenuItem<String?>(
                         value: null,
-                        child: Text('Unassigned'),
+                        child: Text(tr('leads_unassigned')),
                       ),
                       ...widget.users.map(
                             (user) => DropdownMenuItem<String?>(
@@ -5430,7 +5430,7 @@ class _AssignLeadDialogState extends State<AssignLeadDialog> {
                         child: OutlinedButton(
                           onPressed:
                           _isSubmitting ? null : () => Navigator.of(context).pop(),
-                          child: const Text('Cancel'),
+                          child: Text(tr('btn_cancel')),
                         ),
                       ),
                       const SizedBox(width: 12),
@@ -5444,7 +5444,7 @@ class _AssignLeadDialogState extends State<AssignLeadDialog> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                               : const Icon(Icons.check_rounded),
-                          label: Text(_isSubmitting ? 'Saving...' : 'Confirm'),
+                          label: Text(_isSubmitting ? tr('btn_saving') : tr('btn_confirm')),
                         ),
                       ),
                     ],
