@@ -3849,16 +3849,17 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
           profile: widget.profile,
           onLogout: widget.onLogout,
         ),
-      ),      _CrmNavItem(
-        keyName: 'products',
-        label: 'nav_products'.tr(),
-        icon: Icons.inventory_2_outlined,
-        badgeCount: _badgeCountFor('products'),
-        builder: () => PriceListScreen(
-          profile: widget.profile,
-          onLogout: widget.onLogout,
-        ),
       ),
+      // _CrmNavItem(
+      //   keyName: 'products',
+      //   label: 'nav_products'.tr(),
+      //   icon: Icons.inventory_2_outlined,
+      //   badgeCount: _badgeCountFor('products'),
+      //   builder: () => PriceListScreen(
+      //     profile: widget.profile,
+      //     onLogout: widget.onLogout,
+      //   ),
+      // ),
     ];
 
     if (_isAdmin) {
@@ -3876,21 +3877,21 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
         ),
       );
 
-      if (_canAssignLeads) {
-        items.add(
-          _CrmNavItem(
-            keyName: 'shared_leads',
-            label: 'nav_shared_leads'.tr(),
-            icon: Icons.share_outlined,
-            badgeCount: _badgeCountFor('shared_leads'),
-            builder: () => SharedLeadsScreen(
-              profile: widget.profile,
-              onLogout: widget.onLogout,
-              showOwnHeader: false,
-            ),
-          ),
-        );
-      }
+      // if (_canAssignLeads) {
+      //   items.add(
+      //     _CrmNavItem(
+      //       keyName: 'shared_leads',
+      //       label: 'nav_shared_leads'.tr(),
+      //       icon: Icons.share_outlined,
+      //       badgeCount: _badgeCountFor('shared_leads'),
+      //       builder: () => SharedLeadsScreen(
+      //         profile: widget.profile,
+      //         onLogout: widget.onLogout,
+      //         showOwnHeader: false,
+      //       ),
+      //     ),
+      //   );
+      // }
 
       items.addAll([
         _CrmNavItem(
