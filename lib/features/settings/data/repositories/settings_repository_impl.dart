@@ -47,19 +47,28 @@ class SettingsRepositoryImpl implements SettingsRepository {
   @override
   Future<GlobalPriceSettings> getGlobalPriceSettings() async {
     try {
-      final results = await Future.wait([
-        _client
-            .from('price_permission_settings')
-            .select('block_all_prices')
-            .limit(1)
-            .maybeSingle(),
-        _client
-            .from('global_blocked_price_keys')
-            .select('price_key'),
-      ]);
+      final settingsRow = await _client
+          .from('price_permission_settings')
+          .select('block_all_prices')
+          .limit(1)
+          .maybeSingle();
 
-      final settingsRow = results[0] as Map<String, dynamic>?;
-      final blockedRows = results[1] as List;
+      final blockedRows = await _client
+          .from('global_blocked_price_keys')
+          .select('price_key');
+      // final results = await Future.wait([
+      //   _client
+      //       .from('price_permission_settings')
+      //       .select('block_all_prices')
+      //       .limit(1)
+      //       .maybeSingle(),
+      //   _client
+      //       .from('global_blocked_price_keys')
+      //       .select('price_key'),
+      // ]);
+
+      // final settingsRow = results[0] as Map<String, dynamic>?;
+      // final blockedRows = results[1] as List;
 
       return GlobalPriceSettings(
         blockAllPrices: settingsRow?['block_all_prices'] == true,

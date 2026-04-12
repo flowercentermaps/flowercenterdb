@@ -1802,8 +1802,8 @@ class _FollowUpScreenState extends ConsumerState<FollowUpScreen> {
     'overdue',
   ];
 
-  String get _role =>
-      (widget.profile['role'] ?? '').toString().trim().toLowerCase();
+  // String get _role =>
+  //     (widget.profile['role'] ?? '').toString().trim().toLowerCase();
 
   bool get _isAdmin => _role == 'admin';
   bool get _isSales => _role == 'sales';
@@ -1814,9 +1814,28 @@ class _FollowUpScreenState extends ConsumerState<FollowUpScreen> {
   bool get _canEdit => _isAdmin || _isSales;
   bool get _isReadOnly => _isViewer || _isAccountant;
 
-  String get _currentUserId =>
-      (widget.profile['id'] ?? '').toString().trim();
+  // String get _currentUserId =>
+  //     (widget.profile['id'] ?? '').toString().trim();
 
+  UserProfile get _profile =>
+      ref.read(profileProvider).valueOrNull ??
+          const UserProfile(
+            id: '',
+            email: '',
+            name: '',
+            role: '',
+            isActive: false,
+          );
+
+  String get _role => _profile.role.trim().toLowerCase();
+
+  String get _currentUserId => _profile.id.trim();
+
+  String _displayName() {
+    final name = _profile.name.trim();
+    final email = _profile.email.trim();
+    return name.isNotEmpty ? name : email;
+  }
   @override
   void initState() {
     super.initState();
@@ -2167,11 +2186,11 @@ class _FollowUpScreenState extends ConsumerState<FollowUpScreen> {
     return DateTime.tryParse(value.toString());
   }
 
-  String _displayName() {
-    final fullName = _text(widget.profile['full_name']);
-    final email = _text(widget.profile['email']);
-    return fullName.isNotEmpty ? fullName : email;
-  }
+  // String _displayName() {
+  //   final fullName = _text(widget.profile['full_name']);
+  //   final email = _text(widget.profile['email']);
+  //   return fullName.isNotEmpty ? fullName : email;
+  // }
 
   String _leadLabel(String leadId) {
     if (leadId.isEmpty) return 'Unknown lead';
@@ -2268,7 +2287,9 @@ class _FollowUpScreenState extends ConsumerState<FollowUpScreen> {
                 });
               },
               onClearFilters: _clearFilters,
-              onLogout: widget.onLogout,
+
+              onLogout: _handleLogout,
+              // onLogout: widget.onLogout,
             ),
             Expanded(
               child: AnimatedSwitcher(
@@ -2401,7 +2422,15 @@ class _FollowUpScreenState extends ConsumerState<FollowUpScreen> {
       ),
     );
   }
-}
+
+  Future<void> _handleLogout() async {
+    await ref.read(authRepositoryProvider).signOut();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (_) => false,
+    );
+  }}
 
 class _FollowUpHeader extends StatelessWidget {
   final String title;

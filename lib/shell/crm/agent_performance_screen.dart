@@ -2471,12 +2471,17 @@ class _AgentPerformanceScreenState extends ConsumerState<AgentPerformanceScreen>
 
   String _text(dynamic value) => (value ?? '').toString().trim();
 
-  String _displayName() {
-    final fullName = _text(widget.profile['full_name']);
-    final email = _text(widget.profile['email']);
-    return fullName.isNotEmpty ? fullName : email;
-  }
+  // String _displayName() {
+  //   final fullName = _text(widget.profile['full_name']);
+  //   final email = _text(widget.profile['email']);
+  //   return fullName.isNotEmpty ? fullName : email;
+  // }
 
+  String _displayName() {
+    final name = _profile.name.trim();
+    final email = _profile.email.trim();
+    return name.isNotEmpty ? name : email;
+  }
   @override
   Widget build(BuildContext context) {
     final isDesktop = MediaQuery.of(context).size.width >= 1100;
@@ -2492,7 +2497,9 @@ class _AgentPerformanceScreenState extends ConsumerState<AgentPerformanceScreen>
               profileName: _displayName(),
               role: _role,
               onRefresh: _loadRows,
-              onLogout: widget.onLogout,
+              // onLogout: widget.
+              onLogout: _handleLogout,
+              // onLogout,
             ),
             Expanded(
               child: AnimatedSwitcher(
@@ -2634,6 +2641,15 @@ class _AgentPerformanceScreenState extends ConsumerState<AgentPerformanceScreen>
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _handleLogout() async {
+    await ref.read(authRepositoryProvider).signOut();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (_) => false,
     );
   }
 }

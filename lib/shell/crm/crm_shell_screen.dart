@@ -371,11 +371,14 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
         label: 'nav_follow_up'.tr(),
         icon: Icons.reply_all_rounded,
         badgeCount: _badgeCountFor('follow_up'),
-        builder: () => FollowUpScreen(
-          profile: widget.profile,
-          onLogout: widget.onLogout,
+        builder: () => const FollowUpScreen(
           showOwnHeader: false,
         ),
+        // builder: () => FollowUpScreen(
+        //   profile: widget.profile,
+        //   onLogout: widget.onLogout,
+        //   showOwnHeader: false,
+        // ),
       ),
       _CrmNavItem(
         keyName: 'products',
@@ -407,8 +410,8 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
           icon: Icons.bar_chart_rounded,
           badgeCount: _badgeCountFor('statistics'),
           builder: () => StatisticsScreen(
-            profile: widget.profile,
-            onLogout: widget.onLogout,
+            // profile: widget.profile,
+            // onLogout: widget.onLogout,
             showOwnHeader: false,
           ),
         ),
@@ -437,8 +440,8 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
           icon: Icons.groups_2_outlined,
           badgeCount: _badgeCountFor('agent_performance'),
           builder: () => AgentPerformanceScreen(
-            profile: widget.profile,
-            onLogout: widget.onLogout,
+            // profile: widget.profile,
+            // onLogout: widget.onLogout,
             showOwnHeader: false,
           ),
         ),
@@ -448,7 +451,7 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
           icon: Icons.admin_panel_settings_outlined,
           badgeCount: _badgeCountFor('user_roles'),
           builder: () => UserRoleManagementScreen(
-            currentUserId: (widget.profile['id'] ?? '').toString(),
+            // currentUserId: (widget.profile['id'] ?? '').toString(),
           ),
         ),
       ]);

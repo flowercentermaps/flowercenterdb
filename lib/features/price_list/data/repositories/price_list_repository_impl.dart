@@ -4,23 +4,46 @@ import '../../../../core/errors/app_exception.dart';
 import '../../domain/entities/price_item.dart';
 import '../../domain/repositories/price_list_repository.dart';
 
+
+
+
 class PriceListRepositoryImpl implements PriceListRepository {
   final SupabaseClient _client;
 
   const PriceListRepositoryImpl(this._client);
 
+  // @override
+  // Future<List<PriceItem>> getItems({String? category}) async {
+  //   try {
+  //     var query = _client
+  //         .from('products')
+  //         .select()
+  //         .order('category', ascending: true)
+  //         .order('name', ascending: true);
+  //     if (category != null && category.isNotEmpty) {
+  //       query = query.eq('category', category) as dynamic;
+  //     }
+  //     final response = await query;
+  //     return (response as List)
+  //         .map((e) => PriceItem.fromMap(Map<String, dynamic>.from(e as Map)))
+  //         .toList();
+  //   } catch (e) {
+  //     throw ServerException(e.toString());
+  //   }
+  // }
   @override
   Future<List<PriceItem>> getItems({String? category}) async {
     try {
-      var query = _client
-          .from('products')
-          .select()
+      dynamic query = _client.from('products').select();
+
+      if (category != null && category.isNotEmpty) {
+        query = query.eq('category', category);
+      }
+
+      final response = await query
           .order('category', ascending: true)
           .order('name', ascending: true);
-      if (category != null && category.isNotEmpty) {
-        query = query.eq('category', category) as dynamic;
-      }
-      final response = await query;
+
       return (response as List)
           .map((e) => PriceItem.fromMap(Map<String, dynamic>.from(e as Map)))
           .toList();
@@ -28,7 +51,6 @@ class PriceListRepositoryImpl implements PriceListRepository {
       throw ServerException(e.toString());
     }
   }
-
   @override
   Future<List<String>> getCategories() async {
     try {

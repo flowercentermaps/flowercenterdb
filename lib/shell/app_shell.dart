@@ -47,7 +47,24 @@ class _AppShellState extends ConsumerState<AppShell> {
           PushNotificationService(client).initialize(userId: profile.id);
         }
 
-        return const CrmShellScreen(profile: ,);
+        return CrmShellScreen(
+          profile: {
+            'id': profile.id,
+            'email': profile.email,
+            'full_name': profile.name,
+            'role': profile.role,
+            'is_active': profile.isActive,
+          },
+          onLogout: () async {
+            await ref.read(authRepositoryProvider).signOut();
+            if (!context.mounted) return;
+            Navigator.of(context).pushAndRemoveUntil(
+              MaterialPageRoute(builder: (_) => const LoginScreen()),
+                  (_) => false,
+            );
+          },
+        );
+        // return const CrmShellScreen(profile: ,);
       },
     );
   }

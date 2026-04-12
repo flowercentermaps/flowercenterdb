@@ -2234,19 +2234,80 @@ class _StatisticsHeader extends ConsumerWidget {
   }
 }
 
-class _ProfileMenu extends StatelessWidget {
+// class _ProfileMenu extends StatelessWidget {
+//   final String profileName;
+//   final String role;
+//   final Future<void> Function() onLogout;
+//
+//   const _ProfileMenu({
+//     required this.profileName,
+//     required this.role,
+//     required this.onLogout,
+//   });
+//
+//   @override
+//   Widget build(BuildContext context) {
+//     return Row(
+//       children: [
+//         ConstrainedBox(
+//           constraints: const BoxConstraints(maxWidth: 220),
+//           child: Column(
+//             crossAxisAlignment: CrossAxisAlignment.end,
+//             children: [
+//               Text(
+//                 profileName,
+//                 maxLines: 1,
+//                 overflow: TextOverflow.ellipsis,
+//                 style: const TextStyle(fontWeight: FontWeight.w700),
+//               ),
+//               Text(
+//                 role.toUpperCase(),
+//                 style: const TextStyle(
+//                   color: Color(0xFFD4AF37),
+//                   fontWeight: FontWeight.w800,
+//                   fontSize: 12,
+//                 ),
+//               ),
+//             ],
+//           ),
+//         ),
+//         const SizedBox(width: 8),
+//         PopupMenuButton<String>(
+//           onSelected: (value) async {
+//             if (value == 'logout') await onLogout();
+//           },
+//           itemBuilder: (_) => [
+//             PopupMenuItem<String>(
+//               value: 'logout',
+//               child: Text(tr('btn_logout')),
+//             ),
+//           ],
+//           icon: const Icon(Icons.account_circle_outlined),
+//         ),
+//       ],
+//     );
+//   }
+// }
+class _ProfileMenu extends ConsumerWidget {
   final String profileName;
   final String role;
-  final Future<void> Function() onLogout;
 
   const _ProfileMenu({
     required this.profileName,
     required this.role,
-    required this.onLogout,
   });
 
+  Future<void> _handleLogout(BuildContext context, WidgetRef ref) async {
+    await ref.read(authRepositoryProvider).signOut();
+    if (!context.mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+          (_) => false,
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return Row(
       children: [
         ConstrainedBox(
@@ -2274,7 +2335,9 @@ class _ProfileMenu extends StatelessWidget {
         const SizedBox(width: 8),
         PopupMenuButton<String>(
           onSelected: (value) async {
-            if (value == 'logout') await onLogout();
+            if (value == 'logout') {
+              await _handleLogout(context, ref);
+            }
           },
           itemBuilder: (_) => [
             PopupMenuItem<String>(
@@ -2288,7 +2351,6 @@ class _ProfileMenu extends StatelessWidget {
     );
   }
 }
-
 class _KpiGrid extends StatelessWidget {
   final List<_StatTileData> items;
   final bool isDesktop;
