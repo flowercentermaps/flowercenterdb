@@ -28,6 +28,18 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
     super.dispose();
   }
 
+  /// AIM symbology identifiers like ]C1, ]E0, ]Q0 are prepended by some
+  /// scanners/decoders. Strip them before using the value.
+  String _cleanBarcode(String raw) {
+    final trimmed = raw.trim();
+    // AIM identifier format: ] + one letter + one digit (e.g. ]C1, ]E0)
+    if (trimmed.length > 3 && trimmed.startsWith(']') &&
+        RegExp(r'^\][A-Za-z]\d').hasMatch(trimmed)) {
+      return trimmed.substring(3);
+    }
+    return trimmed;
+  }
+
   void _handleBarcodeCapture(BarcodeCapture capture) {
     if (_isHandled) return;
 
@@ -35,7 +47,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
       final rawValue = barcode.rawValue;
       if (rawValue != null && rawValue.trim().isNotEmpty) {
         _isHandled = true;
-        Navigator.of(context).pop(rawValue.trim());
+        Navigator.of(context).pop(_cleanBarcode(rawValue));
         return;
       }
     }
@@ -71,7 +83,7 @@ class _BarcodeScannerScreenState extends State<BarcodeScannerScreen> {
       for (final barcode in barcodes) {
         final rawValue = barcode.rawValue;
         if (rawValue != null && rawValue.trim().isNotEmpty) {
-          code = rawValue.trim();
+          code = _cleanBarcode(rawValue);
           break;
         }
       }

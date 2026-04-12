@@ -27,6 +27,21 @@ const List<_PriceOptionMeta> _priceOptions = [
   _PriceOptionMeta('price_r', 'R'),
   _PriceOptionMeta('price_art', 'ART'),
 ];
+
+const List<String> _specialPriceAllowedUsers = ['maher', 'hayan'];
+
+bool _canSeeSpecialPrice(Map<String, dynamic> profile) {
+  final name = (profile['name'] ?? profile['full_name'] ?? '')
+      .toString()
+      .trim()
+      .toLowerCase();
+  return _specialPriceAllowedUsers.any((n) => name.contains(n));
+}
+
+List<_PriceOptionMeta> _visiblePriceOptions(Map<String, dynamic> profile) {
+  if (_canSeeSpecialPrice(profile)) return _priceOptions;
+  return _priceOptions.where((o) => o.key != 'price_art').toList();
+}
 enum _ViewMode { list, grid }
 
 class _SelectedQuoteItem {
@@ -173,7 +188,7 @@ class _PriceListScreenState extends State<PriceListScreen> {
 
   bool get _canCreateQuotation => _isSales || _isAdmin;
   bool get _canViewQuotations => _isSales || _isAdmin;
-  // bool get _canManagePricePermissions => _isAdmin || _isAccountant;
+  bool get _canManagePricePermissions => _isAdmin;
   bool get _canAddItems => _isAdmin || _isAccountant;
   bool get _canManageUsers => _isAdmin;
   bool get _canUseContainerProcessor => _isAdmin || _isAccountant;
@@ -379,6 +394,7 @@ class _PriceListScreenState extends State<PriceListScreen> {
       final itemCode = (item['item_code'] ?? '').toString().trim();
       final displayPrice = (item['display_price'] ?? '').toString().trim();
       final barcode = (item['barcode'] ?? '').toString().trim();
+      final supplierCode = (item['supplier_code'] ?? '').toString().trim();
       final productType = (item['product_type'] ?? 'tree').toString().trim();
 
       final matchesType = productType == _productType;
@@ -392,6 +408,7 @@ class _PriceListScreenState extends State<PriceListScreen> {
         itemCode,
         displayPrice,
         barcode,
+        supplierCode,
       ].join(' ').toLowerCase();
 
       final matchesSearch = search.isEmpty || haystack.contains(search);
@@ -506,14 +523,24 @@ class _PriceListScreenState extends State<PriceListScreen> {
   void _changeSelectedItemQuantity(int itemId, int delta) {
     final current = _selectedQuoteItems[itemId];
     if (current == null) return;
-
     final nextQty = current.quantity + delta;
-
     setState(() {
       if (nextQty <= 0) {
         _selectedQuoteItems.remove(itemId);
       } else {
         _selectedQuoteItems[itemId] = current.copyWith(quantity: nextQty);
+      }
+    });
+  }
+
+  void _setSelectedItemQuantity(int itemId, int qty) {
+    final current = _selectedQuoteItems[itemId];
+    if (current == null) return;
+    setState(() {
+      if (qty <= 0) {
+        _selectedQuoteItems.remove(itemId);
+      } else {
+        _selectedQuoteItems[itemId] = current.copyWith(quantity: qty);
       }
     });
   }
@@ -813,38 +840,67 @@ class _PriceListScreenState extends State<PriceListScreen> {
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
                                       IconButton(
-                                        visualDensity:
-                                        VisualDensity.compact,
+                                        visualDensity: VisualDensity.compact,
                                         onPressed: () {
-                                          _changeSelectedItemQuantity(
-                                            selected.itemId,
-                                            -1,
-                                          );
+                                          _changeSelectedItemQuantity(selected.itemId, -1);
                                           setModalState(() {});
                                         },
-                                        icon: const Icon(
-                                          Icons.remove_circle_outline,
-                                        ),
+                                        icon: const Icon(Icons.remove_circle_outline),
                                       ),
-                                      Text(
-                                        '${liveSelected?.quantity ?? selected.quantity}',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w800,
+                                      GestureDetector(
+                                        onTap: () async {
+                                          final qty = liveSelected?.quantity ?? selected.quantity;
+                                          final ctrl = TextEditingController(text: '$qty');
+                                          final result = await showDialog<int>(
+                                            context: context,
+                                            builder: (_) => AlertDialog(
+                                              title: const Text('Enter Quantity'),
+                                              content: TextField(
+                                                controller: ctrl,
+                                                autofocus: true,
+                                                keyboardType: TextInputType.number,
+                                                textAlign: TextAlign.center,
+                                                decoration: const InputDecoration(labelText: 'Quantity'),
+                                                onSubmitted: (v) => Navigator.pop(context, int.tryParse(v.trim())),
+                                              ),
+                                              actions: [
+                                                TextButton(
+                                                  onPressed: () => Navigator.pop(context),
+                                                  child: const Text('Cancel'),
+                                                ),
+                                                FilledButton(
+                                                  onPressed: () => Navigator.pop(context, int.tryParse(ctrl.text.trim())),
+                                                  child: const Text('Set'),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                          if (result != null) {
+                                            _setSelectedItemQuantity(selected.itemId, result);
+                                            setModalState(() {});
+                                          }
+                                        },
+                                        child: Container(
+                                          constraints: const BoxConstraints(minWidth: 36),
+                                          padding: const EdgeInsets.symmetric(horizontal: 4),
+                                          child: Text(
+                                            '${liveSelected?.quantity ?? selected.quantity}',
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              fontWeight: FontWeight.w800,
+                                              decoration: TextDecoration.underline,
+                                              decorationStyle: TextDecorationStyle.dotted,
+                                            ),
+                                          ),
                                         ),
                                       ),
                                       IconButton(
-                                        visualDensity:
-                                        VisualDensity.compact,
+                                        visualDensity: VisualDensity.compact,
                                         onPressed: () {
-                                          _changeSelectedItemQuantity(
-                                            selected.itemId,
-                                            1,
-                                          );
+                                          _changeSelectedItemQuantity(selected.itemId, 1);
                                           setModalState(() {});
                                         },
-                                        icon: const Icon(
-                                          Icons.add_circle_outline,
-                                        ),
+                                        icon: const Icon(Icons.add_circle_outline),
                                       ),
                                     ],
                                   ),
@@ -947,6 +1003,7 @@ class _PriceListScreenState extends State<PriceListScreen> {
       builder: (_) => _ProductDetailsSheet(
         item: item,
         formatPrice: _formatPrice,
+        priceOptions: _visiblePriceOptions(widget.profile),
       ),
     );
   }
@@ -1034,8 +1091,8 @@ class _PriceListScreenState extends State<PriceListScreen> {
                           Navigator.of(context).push(
                             MaterialPageRoute(
                               builder: (_) => UserRoleManagementScreen(
-                                currentUserId:
-                                (widget.profile['id'] ?? '').toString(),
+                                // currentUserId:
+                                // (widget.profile['id'] ?? '').toString(),
                               ),
                             ),
                           );
@@ -1155,6 +1212,7 @@ class _PriceListScreenState extends State<PriceListScreen> {
             },
             isLoadingPermissions: _isLoadingPermissions,
             canSelectPricesForQuotation: _canUsePriceChipsForQuotation,
+            priceOptions: _visiblePriceOptions(widget.profile),
           );
         },
       ),
@@ -1199,6 +1257,7 @@ class _PriceListScreenState extends State<PriceListScreen> {
             isLoadingPermissions: _isLoadingPermissions,
             canSelectPricesForQuotation: _canUsePriceChipsForQuotation,
             isDense: isMobile,
+            priceOptions: _visiblePriceOptions(widget.profile),
           );
         },
       ),
@@ -1967,16 +2026,16 @@ class _HeaderFilters extends StatelessWidget {
             onChanged: onCategorySelected,
           ),
         ),
-        const SizedBox(width: 12),
-        _CountBadge(
-          label: 'Showing',
-          value: '$visibleCount / $totalCount',
+        const SizedBox(width: 8),
+        Text(
+          '$visibleCount / $totalCount',
+          style: const TextStyle(fontSize: 12, color: Colors.white54),
         ),
-        const SizedBox(width: 12),
-        OutlinedButton.icon(
+        const SizedBox(width: 4),
+        IconButton(
+          tooltip: 'Clear filters',
           onPressed: onClearFilters,
           icon: const Icon(Icons.restart_alt_rounded),
-          label: const Text('Clear'),
         ),
       ],
     );
@@ -1991,6 +2050,7 @@ class _CompactListTile extends StatelessWidget {
   final void Function(String priceKey, String priceLabel) onSelectPrice;
   final bool isLoadingPermissions;
   final bool canSelectPricesForQuotation;
+  final List<_PriceOptionMeta> priceOptions;
 
   const _CompactListTile({
     required this.item,
@@ -2001,6 +2061,7 @@ class _CompactListTile extends StatelessWidget {
     required this.onSelectPrice,
     required this.isLoadingPermissions,
     required this.canSelectPricesForQuotation,
+    required this.priceOptions,
   });
 
   double? _toDouble(dynamic value) {
@@ -2015,6 +2076,14 @@ class _CompactListTile extends StatelessWidget {
     (item['product_name'] ?? 'Unnamed Product').toString().trim();
     final category = (item['category_ar'] ?? '').toString().trim();
     final itemCode = (item['item_code'] ?? '').toString().trim();
+    final barcode = (item['barcode'] ?? '').toString().trim();
+    final supplierCode = (item['supplier_code'] ?? '').toString().trim();
+    // For flowers show barcode + supplier_code; for trees show item_code
+    final displayCode = itemCode.isNotEmpty
+        ? itemCode
+        : supplierCode.isNotEmpty
+            ? supplierCode
+            : barcode;
     final totalPrice = _toDouble(item['total_price']) ??
         _toDouble(item['price_a']) ??
         _toDouble(item['price_aa']) ??
@@ -2076,7 +2145,7 @@ class _CompactListTile extends StatelessWidget {
                                 fontSize: 10.5,
                               ),
                             ),
-                          if (category.isNotEmpty && itemCode.isNotEmpty)
+                          if (category.isNotEmpty && displayCode.isNotEmpty)
                             const Text(
                               '·',
                               style: TextStyle(
@@ -2084,9 +2153,9 @@ class _CompactListTile extends StatelessWidget {
                                 fontSize: 10.5,
                               ),
                             ),
-                          if (itemCode.isNotEmpty)
+                          if (displayCode.isNotEmpty)
                             Text(
-                              itemCode,
+                              displayCode,
                               style: const TextStyle(
                                 color: AppConstants.primaryColor,
                                 fontSize: 10.5,
@@ -2123,7 +2192,7 @@ class _CompactListTile extends StatelessWidget {
                         spacing: 3,
                         runSpacing: 3,
                         alignment: WrapAlignment.end,
-                        children: _priceOptions.map((option) {
+                        children: priceOptions.map((option) {
                           final rawValue = item[option.key];
                           final numericValue = _toDouble(rawValue);
                           final exists = numericValue != null;
@@ -2412,6 +2481,7 @@ class _ResponsiveProductCard extends StatelessWidget {
   final bool isLoadingPermissions;
   final bool canSelectPricesForQuotation;
   final bool isDense;
+  final List<_PriceOptionMeta> priceOptions;
 
   const _ResponsiveProductCard({
     required this.item,
@@ -2423,6 +2493,7 @@ class _ResponsiveProductCard extends StatelessWidget {
     required this.isLoadingPermissions,
     required this.canSelectPricesForQuotation,
     required this.isDense,
+    required this.priceOptions,
   });
 
   double? _toDouble(dynamic value) {
@@ -2436,6 +2507,13 @@ class _ResponsiveProductCard extends StatelessWidget {
     final productName =
     (item['product_name'] ?? 'Unnamed Product').toString().trim();
     final itemCode = (item['item_code'] ?? '').toString().trim();
+    final barcode = (item['barcode'] ?? '').toString().trim();
+    final supplierCode = (item['supplier_code'] ?? '').toString().trim();
+    final displayCode = itemCode.isNotEmpty
+        ? itemCode
+        : supplierCode.isNotEmpty
+            ? supplierCode
+            : barcode;
     final category = (item['category_ar'] ?? '').toString().trim();
     final imagePath = (item['image_path'] ?? '').toString().trim();
     final sizeText = [
@@ -2632,10 +2710,10 @@ class _ResponsiveProductCard extends StatelessWidget {
                                   height: 1.15,
                                 ),
                               ),
-                              if (itemCode.isNotEmpty) ...[
+                              if (displayCode.isNotEmpty) ...[
                                 const SizedBox(height: 4),
                                 Text(
-                                  itemCode,
+                                  displayCode,
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
@@ -2678,6 +2756,7 @@ class _ResponsiveProductCard extends StatelessWidget {
                                 isLoadingPermissions: isLoadingPermissions,
                                 canSelectPricesForQuotation: canSelectPricesForQuotation,
                                 compact: true,
+                                priceOptions: priceOptions,
                               ),
                             ],
                           ),
@@ -2849,6 +2928,7 @@ class _PriceChipWrap extends StatelessWidget {
   final bool isLoadingPermissions;
   final bool canSelectPricesForQuotation;
   final bool compact;
+  final List<_PriceOptionMeta> priceOptions;
 
   const _PriceChipWrap({
     required this.item,
@@ -2859,6 +2939,7 @@ class _PriceChipWrap extends StatelessWidget {
     required this.isLoadingPermissions,
     required this.canSelectPricesForQuotation,
     required this.compact,
+    required this.priceOptions,
   });
 
   double? _toDouble(dynamic value) {
@@ -2883,7 +2964,7 @@ class _PriceChipWrap extends StatelessWidget {
       );
     }
 
-    final chips = _priceOptions.map((option) {
+    final chips = priceOptions.map((option) {
       final priceValue = _toDouble(item[option.key]);
       final hasValue = priceValue != null;
       final isAllowed = (pricePermissions[option.key] ?? true) && hasValue;
@@ -2946,10 +3027,12 @@ class _PriceChipWrap extends StatelessWidget {
 class _ProductDetailsSheet extends StatelessWidget {
   final Map<String, dynamic> item;
   final String Function(dynamic value) formatPrice;
+  final List<_PriceOptionMeta> priceOptions;
 
   const _ProductDetailsSheet({
     required this.item,
     required this.formatPrice,
+    required this.priceOptions,
   });
 
   @override
@@ -3020,7 +3103,7 @@ class _ProductDetailsSheet extends StatelessWidget {
                       child: Wrap(
                         spacing: 8,
                         runSpacing: 8,
-                        children: _priceOptions.map((option) {
+                        children: priceOptions.map((option) {
                           final effectiveLabel = option.key == 'price_art' &&
                                   item['product_type'] == 'flower'
                               ? 'Special'
@@ -3109,6 +3192,7 @@ class _CreateQuotationSheet extends StatefulWidget {
 
 class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
   final _formKey = GlobalKey<FormState>();
+  final _supabase = Supabase.instance.client;
 
   final _customerNameController = TextEditingController();
   final _companyNameController = TextEditingController();
@@ -3122,6 +3206,11 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
   final _installationFeeController = TextEditingController(text: '0');
   final _additionalDetailsFeeController = TextEditingController(text: '0');
   final _vatPercentController = TextEditingController(text: '5');
+
+  // Auto-fill suggestion
+  Map<String, dynamic>? _suggestedLead;
+  Timer? _autoFillDebounce;
+  bool _applyingAutoFill = false; // prevent listener re-entrant loops
 
   @override
   void initState() {
@@ -3137,14 +3226,71 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
     _installationFeeController.addListener(_rebuild);
     _additionalDetailsFeeController.addListener(_rebuild);
     _vatPercentController.addListener(_rebuild);
+
+    _customerPhoneController.addListener(() => _scheduleAutoFill('phone'));
+    _customerNameController.addListener(() => _scheduleAutoFill('name'));
+    _companyNameController.addListener(() => _scheduleAutoFill('company'));
   }
 
   void _rebuild() {
     if (mounted) setState(() {});
   }
 
+  void _scheduleAutoFill(String field) {
+    if (_applyingAutoFill) return;
+    _autoFillDebounce?.cancel();
+    _autoFillDebounce = Timer(const Duration(milliseconds: 500), () => _lookupLead(field));
+  }
+
+  Future<void> _lookupLead(String field) async {
+    String query = '';
+    String column = '';
+    switch (field) {
+      case 'phone':
+        query = _customerPhoneController.text.trim();
+        column = 'phone';
+      case 'name':
+        query = _customerNameController.text.trim();
+        column = 'name';
+      case 'company':
+        query = _companyNameController.text.trim();
+        column = 'company_name';
+    }
+    if (query.length < 3) {
+      if (mounted) setState(() => _suggestedLead = null);
+      return;
+    }
+    try {
+      final data = await _supabase
+          .from('leads')
+          .select('id, name, phone, company_name')
+          .ilike(column, '%$query%')
+          .limit(1)
+          .maybeSingle();
+      if (!mounted) return;
+      final lead = data != null ? Map<String, dynamic>.from(data as Map) : null;
+      setState(() => _suggestedLead = lead);
+    } catch (_) {}
+  }
+
+  void _acceptSuggestion() {
+    final lead = _suggestedLead;
+    if (lead == null) return;
+    _applyingAutoFill = true;
+    setState(() {
+      _customerNameController.text = (lead['name'] ?? '').toString().trim();
+      _customerPhoneController.text = (lead['phone'] ?? '').toString().trim();
+      _companyNameController.text = (lead['company_name'] ?? '').toString().trim();
+      _suggestedLead = null;
+    });
+    _applyingAutoFill = false;
+  }
+
+  void _dismissSuggestion() => setState(() => _suggestedLead = null);
+
   @override
   void dispose() {
+    _autoFillDebounce?.cancel();
     _customerNameController.dispose();
     _companyNameController.dispose();
     _customerTrnController.dispose();
@@ -3181,6 +3327,19 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
     if (value == null || value.trim().isEmpty) return null;
     if (double.tryParse(value.trim()) == null) return 'Invalid number';
     return null;
+  }
+
+  Future<void> _pickFromLead() async {
+    final picked = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (_) => _LeadPickerDialog(supabase: _supabase),
+    );
+    if (picked == null) return;
+    setState(() {
+      _customerNameController.text = (picked['name'] ?? '').toString().trim();
+      _customerPhoneController.text = (picked['phone'] ?? '').toString().trim();
+      _companyNameController.text = (picked['company_name'] ?? '').toString().trim();
+    });
   }
 
   void _submit() {
@@ -3250,6 +3409,74 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
                   key: _formKey,
                   child: ListView(
                     children: [
+                      // Choose from existing lead
+                      Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: OutlinedButton.icon(
+                          onPressed: _pickFromLead,
+                          icon: const Icon(Icons.person_search_rounded, size: 18),
+                          label: const Text('Choose from Lead'),
+                        ),
+                      ),
+                      // Auto-fill suggestion banner
+                      if (_suggestedLead != null) ...[
+                        const SizedBox(height: 10),
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 200),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: AppConstants.primaryColor.withOpacity(0.10),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppConstants.primaryColor.withOpacity(0.4)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.person_pin_rounded, size: 18, color: AppConstants.primaryColor),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Lead found — fill in details?',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 12,
+                                        color: AppConstants.primaryColor,
+                                      ),
+                                    ),
+                                    Text(
+                                      [
+                                        (_suggestedLead!['name'] ?? '').toString().trim(),
+                                        (_suggestedLead!['phone'] ?? '').toString().trim(),
+                                        (_suggestedLead!['company_name'] ?? '').toString().trim(),
+                                      ].where((s) => s.isNotEmpty).join(' · '),
+                                      style: const TextStyle(fontSize: 12, color: Colors.white70),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              TextButton(
+                                onPressed: _acceptSuggestion,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: AppConstants.primaryColor,
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                                child: const Text('Fill', style: TextStyle(fontWeight: FontWeight.w800)),
+                              ),
+                              IconButton(
+                                onPressed: _dismissSuggestion,
+                                icon: const Icon(Icons.close_rounded, size: 16),
+                                visualDensity: VisualDensity.compact,
+                                color: Colors.white38,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
                       Wrap(
                         spacing: 12,
                         runSpacing: 12,
@@ -3293,6 +3520,8 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
                           _AdaptiveField(
                             isMobile: isMobile,
                             child: TextFormField(
+                              enabled: false,
+
                               controller: _salespersonNameController,
                               decoration: const InputDecoration(
                                 labelText: 'Salesperson Name',
@@ -3302,6 +3531,7 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
                           _AdaptiveField(
                             isMobile: isMobile,
                             child: TextFormField(
+                              enabled: false,
                               controller: _salespersonContactController,
                               decoration: const InputDecoration(
                                 labelText: 'Salesperson Contact',
@@ -3353,6 +3583,7 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
                           _AdaptiveField(
                             isMobile: isMobile,
                             child: TextFormField(
+                              enabled: false,
                               controller: _vatPercentController,
                               validator: _validateNumber,
                               keyboardType: TextInputType.number,
@@ -4096,6 +4327,147 @@ class _BulkAddItemsSheetState extends State<_BulkAddItemsSheet> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Lead Picker Dialog ────────────────────────────────────────────────────────
+
+class _LeadPickerDialog extends StatefulWidget {
+  final SupabaseClient supabase;
+  const _LeadPickerDialog({required this.supabase});
+
+  @override
+  State<_LeadPickerDialog> createState() => _LeadPickerDialogState();
+}
+
+class _LeadPickerDialogState extends State<_LeadPickerDialog> {
+  final _searchController = TextEditingController();
+  List<Map<String, dynamic>> _results = [];
+  bool _isSearching = false;
+  String _lastQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(_onSearchChanged);
+    _search(''); // load recent leads on open
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _onSearchChanged() {
+    final q = _searchController.text.trim();
+    if (q == _lastQuery) return;
+    _lastQuery = q;
+    _search(q);
+  }
+
+  Future<void> _search(String query) async {
+    setState(() => _isSearching = true);
+    try {
+      dynamic req = widget.supabase
+          .from('leads')
+          .select('id, name, phone, company_name, owner_id, status');
+      if (query.isNotEmpty) {
+        req = req.or('name.ilike.%$query%,phone.ilike.%$query%,company_name.ilike.%$query%');
+      }
+      final data = await req.order('updated_at', ascending: false).limit(30);
+      if (!mounted) return;
+      setState(() {
+        _results = (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        _isSearching = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isSearching = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: SizedBox(
+        width: 480,
+        height: 520,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Choose from Lead',
+                      style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16),
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close_rounded),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Search by name, phone, or company...',
+                  prefixIcon: const Icon(Icons.search_rounded),
+                  suffixIcon: _isSearching
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
+                        )
+                      : null,
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: _results.isEmpty && !_isSearching
+                  ? const Center(child: Text('No leads found', style: TextStyle(color: Colors.white54)))
+                  : ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      itemCount: _results.length,
+                      itemBuilder: (context, index) {
+                        final lead = _results[index];
+                        final name = (lead['name'] ?? '').toString().trim();
+                        final phone = (lead['phone'] ?? '').toString().trim();
+                        final company = (lead['company_name'] ?? '').toString().trim();
+                        final status = (lead['status'] ?? '').toString().trim();
+                        return ListTile(
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          title: Text(name.isNotEmpty ? name : 'Unnamed', style: const TextStyle(fontWeight: FontWeight.w700)),
+                          subtitle: Text([
+                            if (phone.isNotEmpty) phone,
+                            if (company.isNotEmpty) company,
+                          ].join(' · '), style: const TextStyle(fontSize: 12)),
+                          trailing: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.07),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(status, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                          ),
+                          onTap: () => Navigator.pop(context, lead),
+                        );
+                      },
+                    ),
+            ),
+          ],
         ),
       ),
     );

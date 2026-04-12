@@ -1755,27 +1755,28 @@ import 'dart:async';
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class FollowUpScreen extends StatefulWidget {
-  final Map<String, dynamic> profile;
-  final Future<void> Function() onLogout;
+import '../../features/auth/domain/entities/user_profile.dart';
+import '../../features/auth/presentation/providers/auth_provider.dart';
+import '../../login_screen.dart';
+
+class FollowUpScreen extends ConsumerStatefulWidget {
   final bool showOwnHeader;
   final String? customTitle;
 
   const FollowUpScreen({
     super.key,
-    required this.profile,
-    required this.onLogout,
     this.showOwnHeader = true,
     this.customTitle,
   });
 
   @override
-  State<FollowUpScreen> createState() => _FollowUpScreenState();
+  ConsumerState<FollowUpScreen> createState() => _FollowUpScreenState();
 }
 
-class _FollowUpScreenState extends State<FollowUpScreen> {
+class _FollowUpScreenState extends ConsumerState<FollowUpScreen> {
   final SupabaseClient _supabase = Supabase.instance.client;
   final TextEditingController _searchController = TextEditingController();
 

@@ -172,9 +172,9 @@ class _UpdateCheckerState extends State<UpdateChecker>
                           size: 56,
                         ),
                         const SizedBox(height: 20),
-                        Text(
-                          tr('update_title'),
-                          style: const TextStyle(
+                        const Text(
+                          'Update Required',
+                          style: TextStyle(
                             fontSize: 22,
                             fontWeight: FontWeight.w900,
                             color: Colors.white,
@@ -182,7 +182,7 @@ class _UpdateCheckerState extends State<UpdateChecker>
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          tr('update_message', namedArgs: {'current': _currentVersion, 'required': _requiredVersion}),
+                          'Your version ($_currentVersion) is outdated. Please update to version $_requiredVersion to continue.',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             color: Colors.white70,
@@ -196,8 +196,8 @@ class _UpdateCheckerState extends State<UpdateChecker>
                           child: FilledButton.icon(
                             onPressed: _openDownload,
                             icon: const Icon(Icons.download_rounded),
-                            label: Text(
-                              tr('btn_download_update'),
+                            label: const Text(
+                              'Download Update',
                               style: const TextStyle(
                                 fontWeight: FontWeight.w800,
                                 fontSize: 16,

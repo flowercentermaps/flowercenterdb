@@ -2549,6 +2549,14 @@ enum LeadScope {
   allLeads,
 }
 
+enum _LeadSort {
+  newestFirst,
+  oldestFirst,
+  nameAZ,
+  nameZA,
+  importantFirst,
+}
+
 class LeadsScreen extends StatefulWidget {
   final Map<String, dynamic> profile;
   final Future<void> Function() onLogout;
@@ -2597,6 +2605,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
   String? _selectedStatus;
   bool _importantOnly = false;
   LeadScope _scope = LeadScope.myLeads;
+  _LeadSort _sortBy = _LeadSort.newestFirst;
 
   static const List<String> _statuses = <String>[
     'new',
@@ -2823,6 +2832,45 @@ class _LeadsScreenState extends State<LeadsScreen> {
 
       return matchesSearch && matchesStatus && matchesImportant;
     }).toList();
+
+    switch (_sortBy) {
+      case _LeadSort.newestFirst:
+        _filteredLeads.sort((a, b) {
+          final aDate = a['updated_at'] ?? a['created_at'];
+          final bDate = b['updated_at'] ?? b['created_at'];
+          if (aDate == null && bDate == null) return 0;
+          if (aDate == null) return 1;
+          if (bDate == null) return -1;
+          return bDate.toString().compareTo(aDate.toString());
+        });
+      case _LeadSort.oldestFirst:
+        _filteredLeads.sort((a, b) {
+          final aDate = a['updated_at'] ?? a['created_at'];
+          final bDate = b['updated_at'] ?? b['created_at'];
+          if (aDate == null && bDate == null) return 0;
+          if (aDate == null) return 1;
+          if (bDate == null) return -1;
+          return aDate.toString().compareTo(bDate.toString());
+        });
+      case _LeadSort.nameAZ:
+        _filteredLeads.sort((a, b) =>
+            _text(a['name']).toLowerCase().compareTo(_text(b['name']).toLowerCase()));
+      case _LeadSort.nameZA:
+        _filteredLeads.sort((a, b) =>
+            _text(b['name']).toLowerCase().compareTo(_text(a['name']).toLowerCase()));
+      case _LeadSort.importantFirst:
+        _filteredLeads.sort((a, b) {
+          final aImp = a['is_important'] == true ? 0 : 1;
+          final bImp = b['is_important'] == true ? 0 : 1;
+          if (aImp != bImp) return aImp.compareTo(bImp);
+          final aDate = a['updated_at'] ?? a['created_at'];
+          final bDate = b['updated_at'] ?? b['created_at'];
+          if (aDate == null && bDate == null) return 0;
+          if (aDate == null) return 1;
+          if (bDate == null) return -1;
+          return bDate.toString().compareTo(aDate.toString());
+        });
+    }
   }
 
   bool _matchesScope(Map<String, dynamic> lead) {
@@ -3414,6 +3462,13 @@ class _LeadsScreenState extends State<LeadsScreen> {
                 },
                 onClearFilters: _clearFilters,
                 onLogout: widget.onLogout,
+                sortBy: _sortBy,
+                onSortChanged: (value) {
+                  setState(() {
+                    _sortBy = value;
+                    _applyFilters();
+                  });
+                },
               ),
             ),
           ],
@@ -3563,6 +3618,8 @@ class _LeadsHeader extends StatelessWidget {
   final ValueChanged<bool> onImportantOnlyChanged;
   final VoidCallback onClearFilters;
   final Future<void> Function() onLogout;
+  final _LeadSort sortBy;
+  final ValueChanged<_LeadSort> onSortChanged;
 
   const _LeadsHeader({
     required this.title,
@@ -3588,6 +3645,8 @@ class _LeadsHeader extends StatelessWidget {
     required this.onImportantOnlyChanged,
     required this.onClearFilters,
     required this.onLogout,
+    required this.sortBy,
+    required this.onSortChanged,
   });
 
   @override
@@ -3696,6 +3755,8 @@ class _LeadsHeader extends StatelessWidget {
                   value: importantOnly,
                   onChanged: onImportantOnlyChanged,
                 ),
+                const SizedBox(width: 8),
+                _SortMenuButton(sortBy: sortBy, onSortChanged: onSortChanged),
                 if (hasFilters) ...[
                   const SizedBox(width: 8),
                   OutlinedButton.icon(
@@ -3772,6 +3833,7 @@ class _LeadsHeader extends StatelessWidget {
                       value: importantOnly,
                       onChanged: onImportantOnlyChanged,
                     ),
+                    _SortMenuButton(sortBy: sortBy, onSortChanged: onSortChanged),
                     if (hasFilters)
                       OutlinedButton.icon(
                         onPressed: onClearFilters,
@@ -3938,6 +4000,89 @@ class _ImportantToggleButton extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SortMenuButton extends StatelessWidget {
+  final _LeadSort sortBy;
+  final ValueChanged<_LeadSort> onSortChanged;
+
+  const _SortMenuButton({
+    required this.sortBy,
+    required this.onSortChanged,
+  });
+
+  String _label(_LeadSort sort) {
+    switch (sort) {
+      case _LeadSort.newestFirst:
+        return 'sort_newest'.tr();
+      case _LeadSort.oldestFirst:
+        return 'sort_oldest'.tr();
+      case _LeadSort.nameAZ:
+        return 'sort_name_az'.tr();
+      case _LeadSort.nameZA:
+        return 'sort_name_za'.tr();
+      case _LeadSort.importantFirst:
+        return 'sort_important'.tr();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isDefault = sortBy == _LeadSort.newestFirst;
+    final Color activeColor = AppConstants.primaryColor;
+    final Color borderColor =
+        isDefault ? Colors.white.withOpacity(0.12) : activeColor;
+    final Color backgroundColor = isDefault
+        ? Colors.white.withOpacity(0.04)
+        : activeColor.withOpacity(0.14);
+    final Color textColor = isDefault ? Colors.white70 : activeColor;
+
+    return PopupMenuButton<_LeadSort>(
+      onSelected: onSortChanged,
+      itemBuilder: (_) => _LeadSort.values.map((sort) {
+        return PopupMenuItem<_LeadSort>(
+          value: sort,
+          child: Row(
+            children: [
+              if (sort == sortBy)
+                Icon(Icons.check_rounded, size: 16, color: activeColor)
+              else
+                const SizedBox(width: 16),
+              const SizedBox(width: 8),
+              Text(_label(sort)),
+            ],
+          ),
+        );
+      }).toList(),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        decoration: BoxDecoration(
+          color: backgroundColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: borderColor),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.sort_rounded, size: 18, color: textColor),
+            const SizedBox(width: 8),
+            Text(
+              _label(sortBy),
+              style: TextStyle(
+                color: textColor,
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.arrow_drop_down_rounded, size: 18, color: textColor),
+          ],
         ),
       ),
     );
@@ -5398,6 +5543,8 @@ class _LeadFormResult {
       'owner_id': effectiveOwner,
       'created_by': currentUserId.isEmpty ? null : currentUserId,
       'assigned_by': assignedBy,
+      'created_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
     };
   }
 

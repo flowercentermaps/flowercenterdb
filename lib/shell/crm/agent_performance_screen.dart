@@ -2390,35 +2390,38 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../features/auth/presentation/providers/auth_provider.dart';
+import '../../features/auth/domain/entities/user_profile.dart';
+import '../../login_screen.dart';
 
-class AgentPerformanceScreen extends StatefulWidget {
-  final Map<String, dynamic> profile;
-  final Future<void> Function() onLogout;
+class AgentPerformanceScreen extends ConsumerStatefulWidget {
   final bool showOwnHeader;
   final String? customTitle;
 
   const AgentPerformanceScreen({
     super.key,
-    required this.profile,
-    required this.onLogout,
     this.showOwnHeader = true,
     this.customTitle,
   });
 
   @override
-  State<AgentPerformanceScreen> createState() => _AgentPerformanceScreenState();
+  ConsumerState<AgentPerformanceScreen> createState() => _AgentPerformanceScreenState();
 }
 
-class _AgentPerformanceScreenState extends State<AgentPerformanceScreen> {
+class _AgentPerformanceScreenState extends ConsumerState<AgentPerformanceScreen> {
   final SupabaseClient _supabase = Supabase.instance.client;
 
   bool _isLoading = true;
   String? _error;
   List<Map<String, dynamic>> _rows = [];
 
-  String get _role =>
-      (widget.profile['role'] ?? '').toString().trim().toLowerCase();
+  UserProfile get _profile =>
+      ref.read(profileProvider).valueOrNull ??
+      const UserProfile(id: '', email: '', name: '', role: '', isActive: false);
+
+  String get _role => _profile.role.trim().toLowerCase();
 
   bool get _isAdmin => _role == 'admin';
 

@@ -1016,6 +1016,10 @@ class _CrmDrawer extends StatelessWidget {
               ),
             ),
             const Divider(color: Color(0xFF2A220A)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              child: LanguageSwitcher(),
+            ),
             ListTile(
               leading: const Icon(Icons.delete_forever_rounded),
               title:  Text('delete_account_title'.tr()),

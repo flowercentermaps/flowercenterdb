@@ -1824,27 +1824,27 @@
 import 'package:easy_localization/easy_localization.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../../features/auth/presentation/providers/auth_provider.dart';
+import '../../features/auth/domain/entities/user_profile.dart';
+import '../../login_screen.dart';
 
-class StatisticsScreen extends StatefulWidget {
-  final Map<String, dynamic> profile;
-  final Future<void> Function() onLogout;
+class StatisticsScreen extends ConsumerStatefulWidget {
   final bool showOwnHeader;
   final String? customTitle;
 
   const StatisticsScreen({
     super.key,
-    required this.profile,
-    required this.onLogout,
     this.showOwnHeader = true,
     this.customTitle,
   });
 
   @override
-  State<StatisticsScreen> createState() => _StatisticsScreenState();
+  ConsumerState<StatisticsScreen> createState() => _StatisticsScreenState();
 }
 
-class _StatisticsScreenState extends State<StatisticsScreen> {
+class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   final SupabaseClient _supabase = Supabase.instance.client;
 
   bool _isLoading = true;
@@ -1852,8 +1852,11 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   Map<String, dynamic>? _leadStats;
   Map<String, dynamic>? _followUpStats;
 
-  String get _role =>
-      (widget.profile['role'] ?? '').toString().trim().toLowerCase();
+  UserProfile get _profile =>
+      ref.read(profileProvider).valueOrNull ??
+      const UserProfile(id: '', email: '', name: '', role: '', isActive: false);
+
+  String get _role => _profile.role.trim().toLowerCase();
 
   bool get _isAdmin => _role == 'admin';
 
@@ -1910,9 +1913,9 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   }
 
   String _displayName() {
-    final fullName = (widget.profile['full_name'] ?? '').toString().trim();
-    final email = (widget.profile['email'] ?? '').toString().trim();
-    return fullName.isNotEmpty ? fullName : email;
+    final name = _profile.name.trim();
+    final email = _profile.email.trim();
+    return name.isNotEmpty ? name : email;
   }
 
   @override
@@ -1930,7 +1933,6 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
               profileName: _displayName(),
               role: _role,
               onRefresh: _loadStats,
-              onLogout: widget.onLogout,
             ),
             Expanded(
               child: AnimatedSwitcher(
@@ -2141,13 +2143,12 @@ class _StatisticsScreenState extends State<StatisticsScreen> {
   }
 }
 
-class _StatisticsHeader extends StatelessWidget {
+class _StatisticsHeader extends ConsumerWidget {
   final String title;
   final bool showOwnHeader;
   final String profileName;
   final String role;
   final Future<void> Function() onRefresh;
-  final Future<void> Function() onLogout;
 
   const _StatisticsHeader({
     required this.title,
@@ -2155,11 +2156,19 @@ class _StatisticsHeader extends StatelessWidget {
     required this.profileName,
     required this.role,
     required this.onRefresh,
-    required this.onLogout,
   });
 
+  Future<void> _handleLogout(BuildContext context, WidgetRef ref) async {
+    await ref.read(authRepositoryProvider).signOut();
+    if (!context.mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final isWide = MediaQuery.of(context).size.width >= 860;
 
     return Container(
@@ -2193,12 +2202,11 @@ class _StatisticsHeader extends StatelessWidget {
                   _ProfileMenu(
                     profileName: profileName,
                     role: role,
-                    onLogout: onLogout,
                   )
                 else
                   PopupMenuButton<String>(
                     onSelected: (value) async {
-                      if (value == 'logout') await onLogout();
+                      if (value == 'logout') await _handleLogout(context, ref);
                     },
                     itemBuilder: (_) => [
                       PopupMenuItem<String>(
