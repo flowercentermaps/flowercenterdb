@@ -671,7 +671,7 @@ class _ContainerProcessorScreenState extends State<ContainerProcessorScreen> {
   }
 
   Future<void> _pickMaster() async {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['xlsx'],
     );
@@ -681,7 +681,7 @@ class _ContainerProcessorScreenState extends State<ContainerProcessorScreen> {
   }
 
   Future<void> _pickPriceList() async {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['xlsx'],
     );
@@ -691,7 +691,7 @@ class _ContainerProcessorScreenState extends State<ContainerProcessorScreen> {
   }
 
   Future<void> _pickContainers() async {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       allowMultiple: true,
       type: FileType.custom,
       allowedExtensions: ['xlsx'],
@@ -704,7 +704,7 @@ class _ContainerProcessorScreenState extends State<ContainerProcessorScreen> {
   }
 
   Future<void> _pickExistingOutput() async {
-    final result = await FilePicker.platform.pickFiles(
+    final result = await FilePicker.pickFiles(
       type: FileType.custom,
       allowedExtensions: ['xlsx'],
     );
@@ -720,7 +720,7 @@ class _ContainerProcessorScreenState extends State<ContainerProcessorScreen> {
       ProcessorUiMode.reprice => 'repriced_output.xlsx',
     };
 
-    final path = await FilePicker.platform.saveFile(
+    final path = await FilePicker.saveFile(
       dialogTitle: 'Save output workbook',
       fileName: defaultName,
       type: FileType.custom,

@@ -3,11 +3,15 @@ import 'dart:convert';
 import 'package:FlowerCenterCrm/user_role_management_screen.dart';
 import 'package:csv/csv.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'container_processor_screen.dart';
 import 'core/constants/app_constants.dart';
+import 'features/auth/domain/entities/user_profile.dart';
+import 'features/auth/presentation/providers/auth_provider.dart';
+import 'login_screen.dart';
 import 'quotation_details_screen.dart';
 import 'quotation_list_screen.dart';
 import 'scanner.dart';
@@ -30,15 +34,12 @@ const List<_PriceOptionMeta> _priceOptions = [
 
 const List<String> _specialPriceAllowedUsers = ['maher', 'hayan'];
 
-bool _canSeeSpecialPrice(Map<String, dynamic> profile) {
-  final name = (profile['name'] ?? profile['full_name'] ?? '')
-      .toString()
-      .trim()
-      .toLowerCase();
+bool _canSeeSpecialPrice(UserProfile profile) {
+  final name = profile.name.trim().toLowerCase();
   return _specialPriceAllowedUsers.any((n) => name.contains(n));
 }
 
-List<_PriceOptionMeta> _visiblePriceOptions(Map<String, dynamic> profile) {
+List<_PriceOptionMeta> _visiblePriceOptions(UserProfile profile) {
   if (_canSeeSpecialPrice(profile)) return _priceOptions;
   return _priceOptions.where((o) => o.key != 'price_art').toList();
 }
@@ -134,21 +135,14 @@ String? _safeTextOrNull(dynamic value) {
   return text.isEmpty ? null : text;
 }
 
-class PriceListScreen extends StatefulWidget {
-  final Map<String, dynamic> profile;
-  final Future<void> Function() onLogout;
-
-  const PriceListScreen({
-    super.key,
-    required this.profile,
-    required this.onLogout,
-  });
+class PriceListScreen extends ConsumerStatefulWidget {
+  const PriceListScreen({super.key});
 
   @override
-  State<PriceListScreen> createState() => _PriceListScreenState();
+  ConsumerState<PriceListScreen> createState() => _PriceListScreenState();
 }
 
-class _PriceListScreenState extends State<PriceListScreen> {
+class _PriceListScreenState extends ConsumerState<PriceListScreen> {
   final SupabaseClient _supabase = Supabase.instance.client;
   final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
@@ -160,15 +154,20 @@ class _PriceListScreenState extends State<PriceListScreen> {
 
   bool _isLoading = true;
   bool _isLoadingPermissions = true;
+  bool _isSavingQuotation = false;
   String? _errorMessage;
 
   List<Map<String, dynamic>> _allItems = [];
   List<Map<String, dynamic>> _filteredItems = [];
   List<String> _categories = [];
 
+  /// supplier_code → total quantity across all branches/stores
+  Map<String, double> _stockTotals = {};
+
   String _searchQuery = '';
   String? _selectedCategory;
   String _productType = 'tree';
+  bool _showOutOfStockOnly = false;
 
   bool _showFiltersOnMobile = false;
 
@@ -178,8 +177,11 @@ class _PriceListScreenState extends State<PriceListScreen> {
 
   final Map<int, _SelectedQuoteItem> _selectedQuoteItems = {};
 
-  String get _role =>
-      (widget.profile['role'] ?? '').toString().trim().toLowerCase();
+  UserProfile get _profile =>
+      ref.read(profileProvider).value ??
+      const UserProfile(id: '', email: '', name: '', role: '', isActive: false);
+
+  String get _role => _profile.role.trim().toLowerCase();
 
   bool get _isAdmin => _role == 'admin';
   bool get _isSales => _role == 'sales';
@@ -188,7 +190,6 @@ class _PriceListScreenState extends State<PriceListScreen> {
 
   bool get _canCreateQuotation => _isSales || _isAdmin;
   bool get _canViewQuotations => _isSales || _isAdmin;
-  bool get _canManagePricePermissions => _isAdmin;
   bool get _canAddItems => _isAdmin || _isAccountant;
   bool get _canManageUsers => _isAdmin;
   bool get _canUseContainerProcessor => _isAdmin || _isAccountant;
@@ -317,13 +318,18 @@ class _PriceListScreenState extends State<PriceListScreen> {
     });
 
     try {
-      final response = await _supabase
-          .from('price_list_api')
-          .select()
-          .order('category_ar', ascending: true)
-          .order('product_name', ascending: true);
+      final results = await Future.wait([
+        _supabase
+            .from('price_list_api')
+            .select()
+            .order('category_ar', ascending: true)
+            .order('product_name', ascending: true),
+        _supabase
+            .from('stock_quantities')
+            .select('supplier_code, quantity'),
+      ]);
 
-      final items = (response as List)
+      final items = (results[0] as List)
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
 
@@ -334,10 +340,20 @@ class _PriceListScreenState extends State<PriceListScreen> {
           .toList()
         ..sort();
 
+      // Aggregate stock totals per supplier_code
+      final Map<String, double> stockTotals = {};
+      for (final row in results[1] as List) {
+        final sc = (row['supplier_code'] ?? '').toString().trim();
+        if (sc.isEmpty) continue;
+        final qty = (row['quantity'] as num?)?.toDouble() ?? 0;
+        stockTotals[sc] = (stockTotals[sc] ?? 0) + qty;
+      }
+
       if (!mounted) return;
       setState(() {
         _allItems = items;
         _categories = categories;
+        _stockTotals = stockTotals;
         _applyFilters();
         _isLoading = false;
       });
@@ -413,7 +429,14 @@ class _PriceListScreenState extends State<PriceListScreen> {
 
       final matchesSearch = search.isEmpty || haystack.contains(search);
 
-      return matchesType && matchesCategory && matchesSearch;
+      bool matchesStock = true;
+      if (_showOutOfStockOnly) {
+        final sc = supplierCode.toUpperCase();
+        final stockTotal = sc.isNotEmpty ? _stockTotals[sc] : null;
+        matchesStock = stockTotal != null && stockTotal <= 0;
+      }
+
+      return matchesType && matchesCategory && matchesSearch && matchesStock;
     }).toList();
 
     // Recompute categories for the current product type
@@ -431,6 +454,7 @@ class _PriceListScreenState extends State<PriceListScreen> {
     setState(() {
       _selectedCategory = null;
       _searchQuery = '';
+      _showOutOfStockOnly = false;
       _searchController.clear();
       _applyFilters();
     });
@@ -552,7 +576,7 @@ class _PriceListScreenState extends State<PriceListScreen> {
     );
   }
 
-  Future<void> _openCreateQuotationSheet() async {
+  Future<void> _openCreateQuotationSheet({required bool isHamasat}) async {
     if (_selectedQuoteItems.isEmpty) return;
 
     final draft = await showModalBottomSheet<_QuotationDraft>(
@@ -566,15 +590,19 @@ class _PriceListScreenState extends State<PriceListScreen> {
       builder: (_) => _CreateQuotationSheet(
         subtotal: _selectedGrandTotal,
         formatPrice: _formatPrice,
-        profile: widget.profile,
+        profile: _profile,
+        isHamasat: isHamasat,
       ),
     );
 
     if (!mounted || draft == null) return;
-    await _saveQuotation(draft);
+    await _saveQuotation(draft , isHamasat);
   }
 
-  Future<void> _saveQuotation(_QuotationDraft draft) async {
+  Future<void> _saveQuotation(_QuotationDraft draft ,bool isHamasat) async {
+    // Guard against double-submission
+    if (_isSavingQuotation) return;
+
     final user = _supabase.auth.currentUser;
     if (user == null) {
       if (!mounted) return;
@@ -583,6 +611,8 @@ class _PriceListScreenState extends State<PriceListScreen> {
       );
       return;
     }
+
+    setState(() => _isSavingQuotation = true);
 
     final subtotal = _selectedGrandTotal;
     final taxableTotal = subtotal +
@@ -603,9 +633,7 @@ class _PriceListScreenState extends State<PriceListScreen> {
       'customer_phone': _safeTextOrNull(draft.customerPhone),
       'salesperson_name': _safeTextOrNull(draft.salespersonName),
       'salesperson_contact': _safeTextOrNull(draft.salespersonContact),
-      'salesperson_phone':
-      _safeTextOrNull(draft.salespersonPhone) ??
-          _safeTextOrNull(widget.profile['phone']),
+      'salesperson_phone': _safeTextOrNull(draft.salespersonPhone),
       'notes': _safeTextOrNull(draft.notes),
       'status': 'draft',
       'subtotal': subtotal,
@@ -618,6 +646,7 @@ class _PriceListScreenState extends State<PriceListScreen> {
       'net_total': netTotal,
       'created_by': user.id,
       'updated_by': user.id,
+      'is_hamasat': isHamasat,
     };
 
     try {
@@ -688,12 +717,25 @@ class _PriceListScreenState extends State<PriceListScreen> {
         };
       }).toList();
 
-      await _supabase.from('quotation_items').insert(itemRows);
+      // Insert items — if this fails, clean up the orphan header
+      try {
+        await _supabase.from('quotation_items').insert(itemRows);
+      } catch (itemsError) {
+        // Roll back the header so we don't leave a quotation with no items
+        try {
+          await _supabase
+              .from('quotations')
+              .delete()
+              .eq('id', quotationId);
+        } catch (_) {}
+        throw Exception('Failed to save items: $itemsError');
+      }
 
       if (!mounted) return;
 
       setState(() {
         _selectedQuoteItems.clear();
+        _isSavingQuotation = false;
       });
 
       final quoteNumber = (insertedQuotation['quote_no'] ?? '').toString();
@@ -708,11 +750,13 @@ class _PriceListScreenState extends State<PriceListScreen> {
         MaterialPageRoute(
           builder: (_) => QuotationDetailsScreen(
             quotationId: quotationId,
+            isHamasat: isHamasat,
           ),
         ),
       );
     } catch (e) {
       if (!mounted) return;
+      setState(() => _isSavingQuotation = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to create quotation: $e')),
       );
@@ -782,6 +826,12 @@ class _PriceListScreenState extends State<PriceListScreen> {
                           final selected = selectedItems[index];
                           final liveSelected =
                           _selectedQuoteItems[selected.itemId];
+                          final sc = (selected.item['supplier_code'] ?? '')
+                              .toString().trim().toUpperCase();
+                          final stockTotal =
+                              sc.isNotEmpty ? _stockTotals[sc] : null;
+                          final isOutOfStock =
+                              stockTotal != null && stockTotal <= 0;
 
                           return Container(
                             padding: const EdgeInsets.all(14),
@@ -789,7 +839,9 @@ class _PriceListScreenState extends State<PriceListScreen> {
                               color: const Color(0xFF171717),
                               borderRadius: BorderRadius.circular(18),
                               border: Border.all(
-                                color: const Color(0xFF2E2E2E),
+                                color: isOutOfStock
+                                    ? const Color(0xFF7F1D1D)
+                                    : const Color(0xFF2E2E2E),
                               ),
                             ),
                             child: Row(
@@ -822,6 +874,42 @@ class _PriceListScreenState extends State<PriceListScreen> {
                                       const SizedBox(height: 6),
                                       Text(
                                         'Line total: ${_formatPrice(selected.lineTotal)}',
+                                      ),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          Container(
+                                            width: 6,
+                                            height: 6,
+                                            margin: const EdgeInsets.only(right: 6),
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: stockTotal == null
+                                                  ? Colors.white24
+                                                  : isOutOfStock
+                                                      ? const Color(0xFFF87171)
+                                                      : const Color(0xFF22c55e),
+                                            ),
+                                          ),
+                                          Text(
+                                            stockTotal == null
+                                                ? 'Stock: —'
+                                                : isOutOfStock
+                                                    ? 'Out of Stock'
+                                                    : 'Stock: ${stockTotal % 1 == 0 ? stockTotal.toInt() : stockTotal.toStringAsFixed(1)}',
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: stockTotal == null
+                                                  ? Colors.white38
+                                                  : isOutOfStock
+                                                      ? const Color(0xFFF87171)
+                                                      : Colors.white54,
+                                              fontWeight: isOutOfStock
+                                                  ? FontWeight.w700
+                                                  : FontWeight.normal,
+                                            ),
+                                          ),
+                                        ],
                                       ),
                                     ],
                                   ),
@@ -913,6 +1001,47 @@ class _PriceListScreenState extends State<PriceListScreen> {
                     ),
                     if (_selectedQuoteItems.isNotEmpty) ...[
                       const SizedBox(height: 16),
+                      // ── Out-of-stock warning ───────────────────────────────
+                      Builder(builder: (_) {
+                        final outOfStockNames = selectedItems.where((s) {
+                          final sc = (s.item['supplier_code'] ?? '')
+                              .toString().trim().toUpperCase();
+                          final t = sc.isNotEmpty ? _stockTotals[sc] : null;
+                          return t != null && t <= 0;
+                        }).map((s) => s.productName.isEmpty
+                            ? 'Unnamed Product'
+                            : s.productName).toList();
+                        if (outOfStockNames.isEmpty) return const SizedBox.shrink();
+                        return Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 12),
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF7F1D1D).withOpacity(0.25),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                                color: const Color(0xFFB91C1C).withOpacity(0.5)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Icon(Icons.warning_amber_rounded,
+                                  color: Color(0xFFF87171), size: 16),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  '${outOfStockNames.length} item${outOfStockNames.length > 1 ? 's are' : ' is'} out of stock: ${outOfStockNames.join(', ')}',
+                                  style: const TextStyle(
+                                    color: Color(0xFFF87171),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -942,16 +1071,34 @@ class _PriceListScreenState extends State<PriceListScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: FilledButton.icon(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            _openCreateQuotationSheet();
-                          },
-                          icon: const Icon(Icons.description_outlined),
-                          label: const Text('Create Quotation'),
-                        ),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _openCreateQuotationSheet(isHamasat: false);
+                              },
+                              icon: const Icon(Icons.description_outlined),
+                              label: const Text('Create FC Quotation'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: FilledButton.icon(
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _openCreateQuotationSheet(isHamasat: true);
+                              },
+                              style: ButtonStyle(
+                                backgroundColor: const WidgetStatePropertyAll(Color(0xFF9B77BA)),
+                                foregroundColor: const WidgetStatePropertyAll(Color(0xFF1A0A2E)),
+                              ),
+                              icon: const Icon(Icons.description_outlined),
+                              label: const Text('Create Hamasat Quotation'),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ],
@@ -1003,7 +1150,7 @@ class _PriceListScreenState extends State<PriceListScreen> {
       builder: (_) => _ProductDetailsSheet(
         item: item,
         formatPrice: _formatPrice,
-        priceOptions: _visiblePriceOptions(widget.profile),
+        priceOptions: _visiblePriceOptions(_profile),
       ),
     );
   }
@@ -1124,8 +1271,7 @@ class _PriceListScreenState extends State<PriceListScreen> {
                           MaterialPageRoute(
                             builder: (_) => QuotationListScreen(
                               role: _role,
-                              currentUserId:
-                              (widget.profile['id'] ?? '').toString(),
+                              currentUserId: _profile.id,
                             ),
                           ),
                         );
@@ -1212,7 +1358,7 @@ class _PriceListScreenState extends State<PriceListScreen> {
             },
             isLoadingPermissions: _isLoadingPermissions,
             canSelectPricesForQuotation: _canUsePriceChipsForQuotation,
-            priceOptions: _visiblePriceOptions(widget.profile),
+            priceOptions: _visiblePriceOptions(_profile),
           );
         },
       ),
@@ -1245,6 +1391,9 @@ class _PriceListScreenState extends State<PriceListScreen> {
         itemBuilder: (context, index) {
           final item = _filteredItems[index];
 
+          final sc = (item['supplier_code'] ?? '').toString().trim();
+          final stockTotal = sc.isNotEmpty ? _stockTotals[sc] : null;
+
           return _ResponsiveProductCard(
             item: item,
             formatPrice: _formatPrice,
@@ -1257,7 +1406,8 @@ class _PriceListScreenState extends State<PriceListScreen> {
             isLoadingPermissions: _isLoadingPermissions,
             canSelectPricesForQuotation: _canUsePriceChipsForQuotation,
             isDense: isMobile,
-            priceOptions: _visiblePriceOptions(widget.profile),
+            priceOptions: _visiblePriceOptions(_profile),
+            stockTotal: stockTotal,
           );
         },
       ),
@@ -1555,8 +1705,22 @@ class _PriceListScreenState extends State<PriceListScreen> {
                         _applyFilters();
                       });
                     },
-                    profile: widget.profile,
-                    onLogout: widget.onLogout,
+                    showOutOfStockOnly: _showOutOfStockOnly,
+                    onToggleOutOfStock: () {
+                      setState(() {
+                        _showOutOfStockOnly = !_showOutOfStockOnly;
+                        _applyFilters();
+                      });
+                    },
+                    profile: _profile,
+                    onLogout: () async {
+                      await ref.read(authRepositoryProvider).signOut();
+                      if (!context.mounted) return;
+                      Navigator.of(context).pushAndRemoveUntil(
+                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+                        (_) => false,
+                      );
+                    },
                     onScanBarcode: _startBarcodeScan,
                     showFiltersOnMobile: _showFiltersOnMobile,
                     onToggleMobileFilters: () {
@@ -1689,7 +1853,9 @@ class _ResponsiveHeaderSection extends StatelessWidget {
   final int totalCount;
   final VoidCallback onClearFilters;
   final ValueChanged<String?> onCategorySelected;
-  final Map<String, dynamic> profile;
+  final bool showOutOfStockOnly;
+  final VoidCallback onToggleOutOfStock;
+  final UserProfile profile;
   final Future<void> Function() onLogout;
   final VoidCallback onScanBarcode;
   final bool showFiltersOnMobile;
@@ -1704,6 +1870,8 @@ class _ResponsiveHeaderSection extends StatelessWidget {
     required this.totalCount,
     required this.onClearFilters,
     required this.onCategorySelected,
+    required this.showOutOfStockOnly,
+    required this.onToggleOutOfStock,
     required this.profile,
     required this.onLogout,
     required this.onScanBarcode,
@@ -1711,16 +1879,14 @@ class _ResponsiveHeaderSection extends StatelessWidget {
     required this.onToggleMobileFilters,
     required this.viewMode,
     required this.onViewModeChanged,
-
-
   });
 
   @override
   Widget build(BuildContext context) {
     final width = MediaQuery.sizeOf(context).width;
     final isMobile = width < 700;
-    final name = (profile['full_name'] ?? 'User').toString().trim();
-    final role = (profile['role'] ?? '').toString().trim();
+    final name = profile.name.isNotEmpty ? profile.name : 'User';
+    final role = profile.role;
 
     return Container(
       decoration: BoxDecoration(
@@ -1801,6 +1967,8 @@ class _ResponsiveHeaderSection extends StatelessWidget {
                   totalCount: totalCount,
                   onClearFilters: onClearFilters,
                   onCategorySelected: onCategorySelected,
+                  showOutOfStockOnly: showOutOfStockOnly,
+                  onToggleOutOfStock: onToggleOutOfStock,
                 ),
               ),
               crossFadeState: showFiltersOnMobile
@@ -1833,6 +2001,8 @@ class _ResponsiveHeaderSection extends StatelessWidget {
                     totalCount: totalCount,
                     onClearFilters: onClearFilters,
                     onCategorySelected: onCategorySelected,
+                    showOutOfStockOnly: showOutOfStockOnly,
+                    onToggleOutOfStock: onToggleOutOfStock,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -1939,6 +2109,8 @@ class _HeaderFilters extends StatelessWidget {
   final int totalCount;
   final VoidCallback onClearFilters;
   final ValueChanged<String?> onCategorySelected;
+  final bool showOutOfStockOnly;
+  final VoidCallback onToggleOutOfStock;
 
   const _HeaderFilters({
     required this.isMobile,
@@ -1948,6 +2120,8 @@ class _HeaderFilters extends StatelessWidget {
     required this.totalCount,
     required this.onClearFilters,
     required this.onCategorySelected,
+    required this.showOutOfStockOnly,
+    required this.onToggleOutOfStock,
   });
 
   @override
@@ -1981,17 +2155,38 @@ class _HeaderFilters extends StatelessWidget {
           const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(
-                child: _CountBadge(
-                  label: 'Showing',
-                  value: '$visibleCount / $totalCount',
+              FilterChip(
+                label: const Text('Out of Stock'),
+                avatar: const Icon(Icons.remove_shopping_cart_outlined, size: 15),
+                selected: showOutOfStockOnly,
+                onSelected: (_) => onToggleOutOfStock(),
+                selectedColor: const Color(0xFF7F1D1D),
+                checkmarkColor: const Color(0xFFF87171),
+                labelStyle: TextStyle(
+                  color: showOutOfStockOnly
+                      ? const Color(0xFFF87171)
+                      : Colors.white70,
+                  fontSize: 12,
                 ),
+                side: BorderSide(
+                  color: showOutOfStockOnly
+                      ? const Color(0xFFB91C1C)
+                      : const Color(0xFF3A3A3A),
+                ),
+                backgroundColor: const Color(0xFF1A1A1A),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
               ),
-              const SizedBox(width: 10),
-              OutlinedButton.icon(
+              const Spacer(),
+              Text(
+                '$visibleCount / $totalCount',
+                style: const TextStyle(fontSize: 12, color: Colors.white54),
+              ),
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Clear filters',
                 onPressed: onClearFilters,
-                icon: const Icon(Icons.restart_alt_rounded),
-                label: const Text('Clear'),
+                icon: const Icon(Icons.restart_alt_rounded, size: 20),
+                visualDensity: VisualDensity.compact,
               ),
             ],
           ),
@@ -2025,6 +2220,28 @@ class _HeaderFilters extends StatelessWidget {
             ],
             onChanged: onCategorySelected,
           ),
+        ),
+        const SizedBox(width: 8),
+        FilterChip(
+          label: const Text('Out of Stock'),
+          avatar: const Icon(Icons.remove_shopping_cart_outlined, size: 15),
+          selected: showOutOfStockOnly,
+          onSelected: (_) => onToggleOutOfStock(),
+          selectedColor: const Color(0xFF7F1D1D),
+          checkmarkColor: const Color(0xFFF87171),
+          labelStyle: TextStyle(
+            color: showOutOfStockOnly
+                ? const Color(0xFFF87171)
+                : Colors.white70,
+            fontSize: 12,
+          ),
+          side: BorderSide(
+            color: showOutOfStockOnly
+                ? const Color(0xFFB91C1C)
+                : const Color(0xFF3A3A3A),
+          ),
+          backgroundColor: const Color(0xFF1A1A1A),
+          padding: const EdgeInsets.symmetric(horizontal: 4),
         ),
         const SizedBox(width: 8),
         Text(
@@ -2482,6 +2699,8 @@ class _ResponsiveProductCard extends StatelessWidget {
   final bool canSelectPricesForQuotation;
   final bool isDense;
   final List<_PriceOptionMeta> priceOptions;
+  /// null = not yet synced / unknown; 0 or less = out of stock; > 0 = in stock
+  final double? stockTotal;
 
   const _ResponsiveProductCard({
     required this.item,
@@ -2494,6 +2713,7 @@ class _ResponsiveProductCard extends StatelessWidget {
     required this.canSelectPricesForQuotation,
     required this.isDense,
     required this.priceOptions,
+    this.stockTotal,
   });
 
   double? _toDouble(dynamic value) {
@@ -2549,9 +2769,38 @@ class _ResponsiveProductCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _ProductImage(
-                imagePath: imagePath,
-                height: isDense ? 110 : 145,
+              Stack(
+                children: [
+                  _ProductImage(
+                    imagePath: imagePath,
+                    height: isDense ? 110 : 145,
+                  ),
+                  if (stockTotal != null && stockTotal! <= 0)
+                    Positioned(
+                      bottom: 8,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFB91C1C).withOpacity(0.88),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text(
+                            'Out of Stock',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
               // Expanded(
               //   child: Padding(
@@ -3024,7 +3273,7 @@ class _PriceChipWrap extends StatelessWidget {
   }
 }
 
-class _ProductDetailsSheet extends StatelessWidget {
+class _ProductDetailsSheet extends StatefulWidget {
   final Map<String, dynamic> item;
   final String Function(dynamic value) formatPrice;
   final List<_PriceOptionMeta> priceOptions;
@@ -3036,21 +3285,76 @@ class _ProductDetailsSheet extends StatelessWidget {
   });
 
   @override
+  State<_ProductDetailsSheet> createState() => _ProductDetailsSheetState();
+}
+
+class _ProductDetailsSheetState extends State<_ProductDetailsSheet> {
+  List<Map<String, dynamic>> _stockRows = [];
+  bool _stockLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStock();
+  }
+
+  Future<void> _loadStock() async {
+    final supplierCode =
+        (widget.item['supplier_code'] ?? '').toString().trim();
+    if (supplierCode.isEmpty) {
+      setState(() => _stockLoading = false);
+      return;
+    }
+    try {
+      final res = await Supabase.instance.client
+          .from('stock_quantities')
+          .select('branch_name, store_name, quantity, branch_id, store_id')
+          .eq('supplier_code', supplierCode)
+          .order('branch_id')
+          .order('store_id');
+      if (mounted) {
+        setState(() {
+          _stockRows = List<Map<String, dynamic>>.from(res);
+          _stockLoading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _stockLoading = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final productName =
-    (item['product_name'] ?? 'Unnamed Product').toString().trim();
-    final description = (item['description'] ?? '').toString().trim();
-    final itemCode = (item['item_code'] ?? '').toString().trim();
-    final category = (item['category_ar'] ?? '').toString().trim();
-    final width = (item['width'] ?? '').toString().trim();
-    final length = (item['length'] ?? '').toString().trim();
-    final productionTime = (item['production_time'] ?? '').toString().trim();
+        (widget.item['product_name'] ?? 'Unnamed Product').toString().trim();
+    final description = (widget.item['description'] ?? '').toString().trim();
+    final itemCode = (widget.item['item_code'] ?? '').toString().trim();
+    final category = (widget.item['category_ar'] ?? '').toString().trim();
+    final width = (widget.item['width'] ?? '').toString().trim();
+    final length = (widget.item['length'] ?? '').toString().trim();
+    final productionTime =
+        (widget.item['production_time'] ?? '').toString().trim();
+
+    // Group stock rows by branch
+    final Map<String, List<Map<String, dynamic>>> byBranch = {};
+    for (final row in _stockRows) {
+      final branch =
+          (row['branch_name'] ?? row['branch_id'] ?? 'Unknown').toString().trim();
+      byBranch.putIfAbsent(branch, () => []).add(row);
+    }
+    final totalQty = _stockRows.fold<double>(
+        0, (sum, r) => sum + ((r['quantity'] as num?)?.toDouble() ?? 0));
 
     return SafeArea(
       child: FractionallySizedBox(
         heightFactor: 0.92,
         child: Padding(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, (MediaQuery.paddingOf(context).bottom + 16).clamp(24.0, double.infinity)),
+          padding: EdgeInsets.fromLTRB(
+              16,
+              16,
+              16,
+              (MediaQuery.paddingOf(context).bottom + 16)
+                  .clamp(24.0, double.infinity)),
           child: Column(
             children: [
               Container(
@@ -3066,15 +3370,46 @@ class _ProductDetailsSheet extends StatelessWidget {
                 child: ListView(
                   children: [
                     _ProductImage(
-                      imagePath: (item['image_path'] ?? '').toString().trim(),
+                      imagePath:
+                          (widget.item['image_path'] ?? '').toString().trim(),
                       height: 240,
                     ),
                     const SizedBox(height: 16),
+                    // ── Out of Stock banner ─────────────────────────────────
+                    if (!_stockLoading && _stockRows.isNotEmpty && totalQty <= 0)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 14, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF7F1D1D).withOpacity(0.35),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                              color: const Color(0xFFB91C1C).withOpacity(0.50)),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.remove_shopping_cart_outlined,
+                                color: Color(0xFFF87171), size: 16),
+                            SizedBox(width: 8),
+                            Text(
+                              'Out of Stock',
+                              style: TextStyle(
+                                color: Color(0xFFF87171),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     Text(
                       productName,
-                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
+                      style:
+                          Theme.of(context).textTheme.headlineSmall?.copyWith(
+                                fontWeight: FontWeight.w900,
+                              ),
                     ),
                     const SizedBox(height: 8),
                     if (category.isNotEmpty)
@@ -3093,6 +3428,8 @@ class _ProductDetailsSheet extends StatelessWidget {
                         value: productionTime,
                       ),
                     const SizedBox(height: 14),
+
+                    // ── Prices ──────────────────────────────────────────────
                     Container(
                       padding: const EdgeInsets.all(14),
                       decoration: BoxDecoration(
@@ -3103,21 +3440,184 @@ class _ProductDetailsSheet extends StatelessWidget {
                       child: Wrap(
                         spacing: 8,
                         runSpacing: 8,
-                        children: priceOptions.map((option) {
+                        children: widget.priceOptions.map((option) {
                           final effectiveLabel = option.key == 'price_art' &&
-                                  item['product_type'] == 'flower'
+                                  widget.item['product_type'] == 'flower'
                               ? 'Special'
                               : option.label;
                           return Chip(
                             backgroundColor: const Color(0xFF101010),
-                            side: const BorderSide(color: Color(0xFF303030)),
+                            side:
+                                const BorderSide(color: Color(0xFF303030)),
                             label: Text(
-                              '$effectiveLabel: ${formatPrice(item[option.key])}',
+                              '$effectiveLabel: ${widget.formatPrice(widget.item[option.key])}',
                             ),
                           );
                         }).toList(),
                       ),
                     ),
+
+                    const SizedBox(height: 14),
+
+                    // ── Stock Quantities ────────────────────────────────────
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0d1f17),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: const Color(0xFF1a3a28)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const Icon(Icons.inventory_2_outlined,
+                                  color: Color(0xFF22c55e), size: 16),
+                              const SizedBox(width: 6),
+                              const Text(
+                                'Stock Quantities',
+                                style: TextStyle(
+                                  color: Color(0xFF22c55e),
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                ),
+                              ),
+                              const Spacer(),
+                              if (!_stockLoading && _stockRows.isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        const Color(0xFF22c55e).withOpacity(0.15),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Text(
+                                    'Total: ${_fmtQty(totalQty)}',
+                                    style: const TextStyle(
+                                      color: Color(0xFF22c55e),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          if (_stockLoading)
+                            const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Color(0xFF22c55e),
+                                  ),
+                                ),
+                              ),
+                            )
+                          else if (_stockRows.isEmpty)
+                            const Text(
+                              'No stock data — run a sync first',
+                              style: TextStyle(
+                                  color: Colors.white38, fontSize: 12),
+                            )
+                          else
+                            ...byBranch.entries.map((entry) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Branch header
+                                  Padding(
+                                    padding:
+                                        const EdgeInsets.only(bottom: 6, top: 2),
+                                    child: Text(
+                                      entry.key,
+                                      style: const TextStyle(
+                                        color: Colors.white54,
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 0.5,
+                                      ),
+                                    ),
+                                  ),
+                                  // Store rows
+                                  ...entry.value.map((row) {
+                                    final storeName = (row['store_name'] ??
+                                            row['store_id'] ??
+                                            'Unknown Store')
+                                        .toString()
+                                        .trim();
+                                    final qty = (row['quantity'] as num?)
+                                            ?.toDouble() ??
+                                        0;
+                                    return Padding(
+                                      padding:
+                                          const EdgeInsets.only(bottom: 6),
+                                      child: Row(
+                                        children: [
+                                          Container(
+                                            width: 6,
+                                            height: 6,
+                                            margin: const EdgeInsets.only(
+                                                right: 8),
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              color: qty > 0
+                                                  ? const Color(0xFF22c55e)
+                                                  : Colors.white24,
+                                            ),
+                                          ),
+                                          Expanded(
+                                            child: Text(
+                                              storeName,
+                                              style: const TextStyle(
+                                                  color: Colors.white70,
+                                                  fontSize: 12),
+                                            ),
+                                          ),
+                                          Text(
+                                            _fmtQty(qty),
+                                            style: TextStyle(
+                                              color: qty > 0
+                                                  ? Colors.white
+                                                  : Colors.white38,
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  }),
+                                  if (entry.value.length > 1)
+                                    Padding(
+                                      padding:
+                                          const EdgeInsets.only(bottom: 8),
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.end,
+                                        children: [
+                                          Text(
+                                            'Branch total: ${_fmtQty(entry.value.fold<double>(0, (s, r) => s + ((r['quantity'] as num?)?.toDouble() ?? 0)))}',
+                                            style: const TextStyle(
+                                              color: Colors.white38,
+                                              fontSize: 11,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                ],
+                              );
+                            }),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 8),
                   ],
                 ),
               ),
@@ -3126,6 +3626,13 @@ class _ProductDetailsSheet extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _fmtQty(double qty) {
+    if (qty == qty.truncateToDouble()) {
+      return qty.toInt().toString();
+    }
+    return qty.toStringAsFixed(1);
   }
 }
 
@@ -3178,12 +3685,14 @@ class _DetailRow extends StatelessWidget {
 class _CreateQuotationSheet extends StatefulWidget {
   final double subtotal;
   final String Function(dynamic value) formatPrice;
-  final Map<String, dynamic> profile;
+  final UserProfile profile;
+  final bool isHamasat;
 
   const _CreateQuotationSheet({
     required this.subtotal,
     required this.formatPrice,
     required this.profile,
+    required this.isHamasat,
   });
 
   @override
@@ -3191,8 +3700,90 @@ class _CreateQuotationSheet extends StatefulWidget {
 }
 
 class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
+  // Hamasat palette — two colours mirror the FC golden scheme:
+  //   _hamPrimary   → replaces AppConstants.primaryColor (bright gold)
+  //   _hamSecondary → replaces every lighter golden shade
+  static const Color _hamPrimary   = Color(0xFF9B77BA);
+  static const Color _hamSecondary = Color(0xFFDED2E8);
+  // Derived dark tints for borders (analogous to FC's dark-gold borders)
+  static const Color _hamBorderDark = Color(0xFF3D2E52);
+  static const Color _hamBorderMid  = Color(0xFF5C4A78);
+  static const Color _hamFg         = Color(0xFF1A0A2E); // text on filled button
+
+  Color get _accentColor =>
+      widget.isHamasat ? _hamPrimary : AppConstants.primaryColor;
+
+  ThemeData _hamTheme(BuildContext context) {
+    final base = Theme.of(context);
+    return base.copyWith(
+      colorScheme: base.colorScheme.copyWith(
+        primary: _hamPrimary,
+        onPrimary: _hamFg,
+        onSurface: _hamSecondary,
+        primaryContainer: _hamBorderDark,
+        onPrimaryContainer: _hamSecondary,
+      ),
+      iconTheme: const IconThemeData(color: _hamPrimary),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xFF161616),
+        hintStyle: const TextStyle(color: _hamSecondary),
+        prefixIconColor: _hamPrimary,
+        suffixIconColor: _hamPrimary,
+        labelStyle: const TextStyle(color: _hamSecondary),
+        floatingLabelStyle: const TextStyle(color: _hamPrimary),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: _hamBorderMid),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: _hamBorderDark),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(16),
+          borderSide: const BorderSide(color: _hamPrimary, width: 1.4),
+        ),
+      ),
+      textTheme: base.textTheme.copyWith(
+        headlineSmall: const TextStyle(
+          color: _hamPrimary,
+          fontWeight: FontWeight.w800,
+        ),
+        bodyLarge: const TextStyle(color: _hamSecondary),
+        bodyMedium: const TextStyle(color: _hamSecondary),
+        labelMedium: const TextStyle(color: _hamSecondary),
+      ),
+      filledButtonTheme: FilledButtonThemeData(
+        style: FilledButton.styleFrom(
+          backgroundColor: _hamPrimary,
+          foregroundColor: _hamFg,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+        ),
+      ),
+      outlinedButtonTheme: OutlinedButtonThemeData(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: _hamPrimary,
+          side: const BorderSide(color: _hamPrimary),
+        ),
+      ),
+      textButtonTheme: TextButtonThemeData(
+        style: TextButton.styleFrom(foregroundColor: _hamPrimary),
+      ),
+      progressIndicatorTheme:
+          const ProgressIndicatorThemeData(color: _hamPrimary),
+      dividerTheme: const DividerThemeData(
+        color: _hamBorderDark,
+        thickness: 1,
+      ),
+    );
+  }
+
   final _formKey = GlobalKey<FormState>();
   final _supabase = Supabase.instance.client;
+  bool _isSubmitting = false;
 
   final _customerNameController = TextEditingController();
   final _companyNameController = TextEditingController();
@@ -3215,12 +3806,9 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
   @override
   void initState() {
     super.initState();
-    _salespersonNameController.text =
-        (widget.profile['full_name'] ?? '').toString().trim();
-    _salespersonContactController.text =
-        (widget.profile['email'] ?? '').toString().trim();
-    _salespersonPhoneController.text =
-        (widget.profile['phone'] ?? '').toString().trim();
+    _salespersonNameController.text = widget.profile.name;
+    _salespersonContactController.text = widget.profile.email;
+    _salespersonPhoneController.text = '';
 
     _deliveryFeeController.addListener(_rebuild);
     _installationFeeController.addListener(_rebuild);
@@ -3343,7 +3931,9 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
   }
 
   void _submit() {
+    if (_isSubmitting) return;
     if (!_formKey.currentState!.validate()) return;
+    setState(() => _isSubmitting = true);
 
     Navigator.of(context).pop(
       _QuotationDraft(
@@ -3367,7 +3957,7 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
   Widget build(BuildContext context) {
     final isMobile = MediaQuery.sizeOf(context).width < 700;
 
-    return SafeArea(
+    final sheet = SafeArea(
       child: FractionallySizedBox(
         heightFactor: 0.94,
         child: Padding(
@@ -3396,8 +3986,8 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
                   ),
                   Text(
                     widget.formatPrice(_netTotal),
-                    style: const TextStyle(
-                      color: AppConstants.primaryColor,
+                    style: TextStyle(
+                      color: _accentColor,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
@@ -3425,24 +4015,24 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
                           duration: const Duration(milliseconds: 200),
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                           decoration: BoxDecoration(
-                            color: AppConstants.primaryColor.withOpacity(0.10),
+                            color: _accentColor.withOpacity(0.10),
                             borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: AppConstants.primaryColor.withOpacity(0.4)),
+                            border: Border.all(color: _accentColor.withOpacity(0.4)),
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.person_pin_rounded, size: 18, color: AppConstants.primaryColor),
+                              Icon(Icons.person_pin_rounded, size: 18, color: _accentColor),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Text(
+                                    Text(
                                       'Lead found — fill in details?',
                                       style: TextStyle(
                                         fontWeight: FontWeight.w700,
                                         fontSize: 12,
-                                        color: AppConstants.primaryColor,
+                                        color: _accentColor,
                                       ),
                                     ),
                                     Text(
@@ -3461,7 +4051,7 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
                               TextButton(
                                 onPressed: _acceptSuggestion,
                                 style: TextButton.styleFrom(
-                                  foregroundColor: AppConstants.primaryColor,
+                                  foregroundColor: _accentColor,
                                   visualDensity: VisualDensity.compact,
                                 ),
                                 child: const Text('Fill', style: TextStyle(fontWeight: FontWeight.w800)),
@@ -3633,6 +4223,7 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
                               label: 'Net Total',
                               value: widget.formatPrice(_netTotal),
                               highlight: true,
+                              highlightColor: _accentColor,
                             ),
                           ],
                         ),
@@ -3645,9 +4236,19 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
-                  onPressed: _submit,
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: const Text('Save Quotation'),
+                  onPressed: _isSubmitting ? null : _submit,
+                  icon: _isSubmitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.check_circle_outline),
+                  label: Text(
+                      _isSubmitting ? 'Saving…' : 'Save Quotation'),
                 ),
               ),
             ],
@@ -3655,6 +4256,9 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
         ),
       ),
     );
+    return widget.isHamasat
+        ? Theme(data: _hamTheme(context), child: sheet)
+        : sheet;
   }
 }
 
@@ -3681,16 +4285,20 @@ class _SummaryRow extends StatelessWidget {
   final String label;
   final String value;
   final bool highlight;
+  final Color? highlightColor;
 
   const _SummaryRow({
     required this.label,
     required this.value,
     this.highlight = false,
+    this.highlightColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    final color = highlight ? AppConstants.primaryColor : Colors.white;
+    final color = highlight
+        ? (highlightColor ?? AppConstants.primaryColor)
+        : Colors.white;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),

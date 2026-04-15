@@ -14,10 +14,32 @@ class QuotationPdfPreviewScreen extends StatelessWidget {
     super.key,
     required this.quoteNo,
     required this.buildPdf,
+    this.isHamasat = false,
   });
 
   final String quoteNo;
   final Future<Uint8List> Function(PdfPageFormat format) buildPdf;
+  final bool isHamasat;
+
+  static const Color _hamPrimary   = Color(0xFF9B77BA);
+  static const Color _hamSecondary = Color(0xFFDED2E8);
+
+  ThemeData _hamTheme(BuildContext context) {
+    final base = Theme.of(context);
+    return base.copyWith(
+      colorScheme: base.colorScheme.copyWith(
+        primary: _hamPrimary,
+        onPrimary: const Color(0xFF1A0A2E),
+        onSurface: _hamSecondary,
+      ),
+      appBarTheme: base.appBarTheme.copyWith(
+        foregroundColor: _hamPrimary,
+      ),
+      iconTheme: const IconThemeData(color: _hamPrimary),
+      progressIndicatorTheme:
+          const ProgressIndicatorThemeData(color: _hamPrimary),
+    );
+  }
 
   Future<String> _savePdf(BuildContext context) async {
     final bytes = await buildPdf(PdfPageFormat.a4);
@@ -32,7 +54,7 @@ class QuotationPdfPreviewScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    final scaffold = Scaffold(
       appBar: AppBar(
         title:  Text('Quotation Preview'.tr()),
         actions: [
@@ -95,5 +117,8 @@ class QuotationPdfPreviewScreen extends StatelessWidget {
         pdfFileName: '${quoteNo.replaceAll('/', '-')}.pdf',
       ),
     );
+    return isHamasat
+        ? Theme(data: _hamTheme(context), child: scaffold)
+        : scaffold;
   }
 }

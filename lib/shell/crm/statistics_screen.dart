@@ -1853,7 +1853,7 @@ class _StatisticsScreenState extends ConsumerState<StatisticsScreen> {
   Map<String, dynamic>? _followUpStats;
 
   UserProfile get _profile =>
-      ref.read(profileProvider).valueOrNull ??
+      ref.read(profileProvider).value ??
       const UserProfile(id: '', email: '', name: '', role: '', isActive: false);
 
   String get _role => _profile.role.trim().toLowerCase();

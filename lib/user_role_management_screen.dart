@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'features/auth/presentation/providers/auth_provider.dart';
-import 'features/auth/domain/entities/user_profile.dart';
 
 class UserRoleManagementScreen extends ConsumerStatefulWidget {
   const UserRoleManagementScreen({super.key});
@@ -17,7 +16,7 @@ class _UserRoleManagementScreenState extends ConsumerState<UserRoleManagementScr
   final SupabaseClient _supabase = Supabase.instance.client;
 
   String get _currentUserId =>
-      ref.read(profileProvider).valueOrNull?.id ?? '';
+      ref.read(profileProvider).value?.id ?? '';
 
   final TextEditingController _searchController = TextEditingController();
 

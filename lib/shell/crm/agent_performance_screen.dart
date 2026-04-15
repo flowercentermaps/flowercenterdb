@@ -2418,7 +2418,7 @@ class _AgentPerformanceScreenState extends ConsumerState<AgentPerformanceScreen>
   List<Map<String, dynamic>> _rows = [];
 
   UserProfile get _profile =>
-      ref.read(profileProvider).valueOrNull ??
+      ref.read(profileProvider).value ??
       const UserProfile(id: '', email: '', name: '', role: '', isActive: false);
 
   String get _role => _profile.role.trim().toLowerCase();

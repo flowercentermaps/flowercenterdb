@@ -1818,7 +1818,7 @@ class _FollowUpScreenState extends ConsumerState<FollowUpScreen> {
   //     (widget.profile['id'] ?? '').toString().trim();
 
   UserProfile get _profile =>
-      ref.read(profileProvider).valueOrNull ??
+      ref.read(profileProvider).value ??
           const UserProfile(
             id: '',
             email: '',

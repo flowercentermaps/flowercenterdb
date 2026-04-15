@@ -1888,28 +1888,33 @@ import 'dart:async';
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class NotificationsScreen extends StatefulWidget {
-  final Map<String, dynamic> profile;
-  final Future<void> Function() onLogout;
+import '../../features/auth/domain/entities/user_profile.dart';
+import '../../features/auth/presentation/providers/auth_provider.dart';
+import '../../login_screen.dart';
+
+class NotificationsScreen extends ConsumerStatefulWidget {
   final bool showOwnHeader;
   final String? customTitle;
 
   const NotificationsScreen({
     super.key,
-    required this.profile,
-    required this.onLogout,
     this.showOwnHeader = true,
     this.customTitle,
   });
 
   @override
-  State<NotificationsScreen> createState() => _NotificationsScreenState();
+  ConsumerState<NotificationsScreen> createState() => _NotificationsScreenState();
 }
 
-class _NotificationsScreenState extends State<NotificationsScreen> {
+class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   final SupabaseClient _supabase = Supabase.instance.client;
+
+  UserProfile get _profile =>
+      ref.read(profileProvider).value ??
+      const UserProfile(id: '', email: '', name: '', role: '', isActive: false);
 
   RealtimeChannel? _realtimeChannel;
   Timer? _realtimeRefreshDebounce;
@@ -1926,14 +1931,12 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Map<String, Map<String, dynamic>> _leadMap = {};
   Map<String, Map<String, dynamic>> _profileMap = {};
 
-  String get _role =>
-      (widget.profile['role'] ?? '').toString().trim().toLowerCase();
+  String get _role => _profile.role.trim().toLowerCase();
 
   bool get _isAdmin => _role == 'admin';
   bool get _isSales => _role == 'sales';
 
-  String get _currentUserId =>
-      (widget.profile['id'] ?? '').toString().trim();
+  String get _currentUserId => _profile.id;
 
   @override
   void initState() {
@@ -2791,9 +2794,16 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   }
 
   String _displayName() {
-    final fullName = _text(widget.profile['full_name']);
-    final email = _text(widget.profile['email']);
-    return fullName.isNotEmpty ? fullName : email;
+    return _profile.name.isNotEmpty ? _profile.name : _profile.email;
+  }
+
+  Future<void> _logout() async {
+    await ref.read(authRepositoryProvider).signOut();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
   }
 
   String _leadLabel(String leadId) {
@@ -2859,7 +2869,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
               role: _role,
               isDesktop: isDesktop,
               onRefresh: _loadAlerts,
-              onLogout: widget.onLogout,
+              onLogout: _logout,
             ),
             Expanded(
               child: AnimatedSwitcher(

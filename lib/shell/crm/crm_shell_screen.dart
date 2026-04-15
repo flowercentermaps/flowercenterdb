@@ -2,34 +2,37 @@ import 'dart:async';
 import 'package:FlowerCenterCrm/shell/crm/statistics_screen.dart';
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/widgets/laguage_switcher.dart';
+import '../../features/auth/domain/entities/user_profile.dart';
+import '../../features/auth/presentation/providers/auth_provider.dart';
+import '../../login_screen.dart';
 import '../../price_list_screen.dart';
+import '../../sync_screen.dart';
 import '../../user_role_management_screen.dart';
 import 'agent_performance_screen.dart';
 import 'follow_up_screen.dart';
 import 'home_dashboard_screen.dart';
 import 'leads_screen.dart';
 import 'notifications_screen.dart';
+import 'purchase_request_screen.dart';
 
-class CrmShellScreen extends StatefulWidget {
-  final Map<String, dynamic> profile;
-  final Future<void> Function() onLogout;
-
-  const CrmShellScreen({
-    super.key,
-    required this.profile,
-    required this.onLogout,
-  });
+class CrmShellScreen extends ConsumerStatefulWidget {
+  const CrmShellScreen({super.key});
 
   @override
-  State<CrmShellScreen> createState() => _CrmShellScreenState();
+  ConsumerState<CrmShellScreen> createState() => _CrmShellScreenState();
 }
 
-class _CrmShellScreenState extends State<CrmShellScreen> {
+class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
   final SupabaseClient _supabase = Supabase.instance.client;
+
+  UserProfile get _profile =>
+      ref.read(profileProvider).value ??
+      const UserProfile(id: '', email: '', name: '', role: '', isActive: false);
 
   int _selectedIndex = 0;
 
@@ -39,16 +42,14 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
   int _notificationsBadgeCount = 0;
   int _followUpBadgeCount = 0;
 
-  String get _role =>
-      (widget.profile['role'] ?? '').toString().trim().toLowerCase();
+  String get _role => _profile.role.trim().toLowerCase();
 
   bool get _isAdmin => _role == 'admin';
   bool get _isSales => _role == 'sales';
   bool get _isViewer => _role == 'viewer';
   bool get _isAccountant => _role == 'accountant';
 
-  String get _currentUserId =>
-      (widget.profile['id'] ?? '').toString().trim();
+  String get _currentUserId => _profile.id;
 
   // bool get _canAssignLeads =>
   //     _isAdmin && widget.profile['can_assign_leads'] == true;
@@ -339,32 +340,21 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
         label: 'nav_home'.tr(),
         icon: Icons.dashboard_outlined,
         badgeCount: _badgeCountFor('home'),
-        builder: () => HomeDashboardScreen(
-          profile: widget.profile,
-          onLogout: widget.onLogout,
-          showOwnHeader: false,
-        ),
+        builder: () => const HomeDashboardScreen(showOwnHeader: false),
       ),
       _CrmNavItem(
         keyName: 'notifications',
         label: 'nav_notifications'.tr(),
         icon: Icons.notifications_active_outlined,
         badgeCount: _badgeCountFor('notifications'),
-        builder: () => NotificationsScreen(
-          profile: widget.profile,
-          onLogout: widget.onLogout,
-          showOwnHeader: false,
-        ),
+        builder: () => const NotificationsScreen(showOwnHeader: false),
       ),
       _CrmNavItem(
         keyName: 'leads',
         label: 'nav_leads'.tr(),
         icon: Icons.people_alt_outlined,
         badgeCount: _badgeCountFor('leads'),
-        builder: () => LeadsScreen(
-          profile: widget.profile,
-          onLogout: widget.onLogout,
-        ),
+        builder: () => const LeadsScreen(),
       ),
       _CrmNavItem(
         keyName: 'follow_up',
@@ -385,10 +375,7 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
         label: 'nav_products'.tr(),
         icon: Icons.inventory_2_outlined,
         badgeCount: _badgeCountFor('products'),
-        builder: () => PriceListScreen(
-          profile: widget.profile,
-          onLogout: widget.onLogout,
-        ),
+        builder: () => const PriceListScreen(),
       ),
       // _CrmNavItem(
       //   keyName: 'products',
@@ -401,6 +388,17 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
       //   ),
       // ),
     ];
+
+    // Purchase Request — visible to all roles
+    items.add(
+      _CrmNavItem(
+        keyName: 'purchase_request',
+        label: 'Purchase Request',
+        icon: Icons.shopping_cart_outlined,
+        badgeCount: 0,
+        builder: () => PurchaseRequestScreen(isAdmin: _isAdmin),
+      ),
+    );
 
     if (_isAdmin) {
       items.add(
@@ -454,6 +452,13 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
             // currentUserId: (widget.profile['id'] ?? '').toString(),
           ),
         ),
+        _CrmNavItem(
+          keyName: 'sync',
+          label: 'Sync',
+          icon: Icons.sync_rounded,
+          badgeCount: 0,
+          builder: () => const SyncScreen(showOwnHeader: false),
+        ),
       ]);
     }
 
@@ -503,15 +508,29 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
     try {
       await _supabase.functions.invoke('delete-account');
       await _supabase.auth.signOut();
+      ref.invalidate(profileProvider);
 
       if (!mounted) return;
-      await widget.onLogout();
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (_) => false,
+      );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(tr('delete_account_failed', namedArgs: {'error': e.toString()}))),
       );
     }
+  }
+
+  Future<void> _logout() async {
+    await _supabase.auth.signOut();
+    ref.invalidate(profileProvider);
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
   }
 
   Future<bool?> _showDeleteAccountDialog() {
@@ -563,8 +582,8 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
         items: items,
         selectedIndex: _selectedIndex,
         onSelect: _selectIndex,
-        profile: widget.profile,
-        onLogout: widget.onLogout,
+        profile: _profile,
+        onLogout: _logout,
         onDeleteAccount: _deleteMyAccount,
       ),
       body: SafeArea(
@@ -575,7 +594,7 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
               items: items,
               selectedIndex: _selectedIndex,
               onSelect: _selectIndex,
-              profile: widget.profile,
+              profile: _profile,
             ),
             const VerticalDivider(
               width: 1,
@@ -587,8 +606,8 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
                 children: [
                   _CrmTopBar(
                     title: currentItem.label,
-                    profile: widget.profile,
-                    onLogout: widget.onLogout,
+                    profile: _profile,
+                    onLogout: _logout,
                     onDeleteAccount: _deleteMyAccount,
                   ),
                   const Divider(
@@ -611,8 +630,8 @@ class _CrmShellScreenState extends State<CrmShellScreen> {
           children: [
             _CrmMobileTopBar(
               title: currentItem.label,
-              profile: widget.profile,
-              onLogout: widget.onLogout,
+              profile: _profile,
+              onLogout: _logout,
               onDeleteAccount: _deleteMyAccount,
             ),
             const Divider(
@@ -731,7 +750,7 @@ class _CrmSidebar extends StatelessWidget {
   final List<_CrmNavItem> items;
   final int selectedIndex;
   final ValueChanged<int> onSelect;
-  final Map<String, dynamic> profile;
+  final UserProfile profile;
 
   const _CrmSidebar({
     required this.items,
@@ -963,7 +982,7 @@ class _CrmDrawer extends StatelessWidget {
   final List<_CrmNavItem> items;
   final int selectedIndex;
   final ValueChanged<int> onSelect;
-  final Map<String, dynamic> profile;
+  final UserProfile profile;
   final Future<void> Function() onLogout;
   final Future<void> Function() onDeleteAccount;
 
@@ -978,9 +997,9 @@ class _CrmDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fullName = (profile['full_name'] ?? '').toString().trim();
-    final email = (profile['email'] ?? '').toString().trim();
-    final role = (profile['role'] ?? '').toString().trim().toUpperCase();
+    final fullName = profile.name;
+    final email = profile.email;
+    final role = profile.role.toUpperCase();
 
     return Drawer(
       backgroundColor: const Color(0xFF111111),
@@ -1048,7 +1067,7 @@ class _CrmDrawer extends StatelessWidget {
 
 class _CrmTopBar extends StatelessWidget {
   final String title;
-  final Map<String, dynamic> profile;
+  final UserProfile profile;
   final Future<void> Function() onLogout;
   final Future<void> Function() onDeleteAccount;
 
@@ -1061,9 +1080,7 @@ class _CrmTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fullName = (profile['full_name'] ?? '').toString().trim();
-    final email = (profile['email'] ?? '').toString().trim();
-    final displayName = fullName.isNotEmpty ? fullName : email;
+    final displayName = profile.name.isNotEmpty ? profile.name : profile.email;
 
     return Container(
       height: 64,
@@ -1128,7 +1145,7 @@ class _CrmTopBar extends StatelessWidget {
 
 class _CrmMobileTopBar extends StatelessWidget {
   final String title;
-  final Map<String, dynamic> profile;
+  final UserProfile profile;
   final Future<void> Function() onLogout;
   final Future<void> Function() onDeleteAccount;
 
@@ -1141,8 +1158,8 @@ class _CrmMobileTopBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fullName = (profile['full_name'] ?? '').toString().trim();
-    final email = (profile['email'] ?? '').toString().trim();
+    final fullName = profile.name;
+    final email = profile.email;
 
     return Container(
       color: const Color(0xFF111111),

@@ -2525,10 +2525,14 @@ import 'dart:async';
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../features/auth/domain/entities/user_profile.dart';
+import '../../features/auth/presentation/providers/auth_provider.dart';
+import '../../login_screen.dart';
 import '../../services/push_sender_service.dart';
 import 'customer_profile_screen.dart';
 
@@ -2557,9 +2561,7 @@ enum _LeadSort {
   importantFirst,
 }
 
-class LeadsScreen extends StatefulWidget {
-  final Map<String, dynamic> profile;
-  final Future<void> Function() onLogout;
+class LeadsScreen extends ConsumerStatefulWidget {
   final bool initialImportantOnly;
   final String? initialStatus;
   final bool showOwnHeader;
@@ -2568,8 +2570,6 @@ class LeadsScreen extends StatefulWidget {
 
   const LeadsScreen({
     super.key,
-    required this.profile,
-    required this.onLogout,
     this.initialImportantOnly = false,
     this.initialStatus,
     this.showOwnHeader = true,
@@ -2578,10 +2578,10 @@ class LeadsScreen extends StatefulWidget {
   });
 
   @override
-  State<LeadsScreen> createState() => _LeadsScreenState();
+  ConsumerState<LeadsScreen> createState() => _LeadsScreenState();
 }
 
-class _LeadsScreenState extends State<LeadsScreen> {
+class _LeadsScreenState extends ConsumerState<LeadsScreen> {
   final SupabaseClient _supabase = Supabase.instance.client;
   late final PushSenderService _pushSenderService =
   PushSenderService(_supabase);
@@ -2615,8 +2615,11 @@ class _LeadsScreenState extends State<LeadsScreen> {
     'closed_lost',
   ];
 
-  String get _role =>
-      (widget.profile['role'] ?? '').toString().trim().toLowerCase();
+  UserProfile get _profile =>
+      ref.read(profileProvider).value ??
+      const UserProfile(id: '', email: '', name: '', role: '', isActive: false);
+
+  String get _role => _profile.role.trim().toLowerCase();
 
   bool get _isAdmin => _role == 'admin';
   bool get _isSales => _role == 'sales';
@@ -2627,10 +2630,10 @@ class _LeadsScreenState extends State<LeadsScreen> {
   bool get _canCreateLead => (_isAdmin || _isSales) && !_isReadOnly;
   bool get _canEditLead => (_isAdmin || _isSales) && !_isReadOnly;
   bool get _canDeleteLead => _isAdmin && !_isReadOnly;
-  bool get _canAssignLeads =>
-      _isAdmin && widget.profile['can_assign_leads'] == true;
+  // can_assign_leads is not in UserProfile entity — default to admin-only
+  bool get _canAssignLeads => _isAdmin;
 
-  String get _currentUserId => (widget.profile['id'] ?? '').toString().trim();
+  String get _currentUserId => _profile.id;
 
   @override
   void initState() {
@@ -3072,7 +3075,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
               'old_owner_id': oldOwnerId.isEmpty ? null : oldOwnerId,
               'new_owner_id': newOwnerId,
               'source': 'leads_merged',
-              'actor_name': _displayUserLabel(widget.profile),
+              'actor_name': _profile.name.isNotEmpty ? _profile.name : _profile.email,
               'old_owner_name': _userDisplayById(oldOwnerId),
               'new_owner_name': _userDisplayById(newOwnerId),
             },
@@ -3122,8 +3125,6 @@ class _LeadsScreenState extends State<LeadsScreen> {
 
     final name = _text(lead['name']);
     final company = _text(lead['company_name']);
-    final label = name.isNotEmpty ? name : (company.isNotEmpty ? company : 'lead_unnamed'.tr());
-
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -3172,7 +3173,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
     if (newOwnerId.isEmpty) return;
     if (newOwnerId == oldOwnerId) return;
 
-    final actorName = _displayUserLabel(widget.profile);
+    final actorName = _profile.name.isNotEmpty ? _profile.name : _profile.email;
     final oldOwnerName =
     oldOwnerId.isEmpty ? 'Unassigned' : _userDisplayById(oldOwnerId);
 
@@ -3195,7 +3196,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
       MaterialPageRoute(
         builder: (_) => CustomerProfileScreen(
           lead: lead,
-          profile: widget.profile,
+          profile: _profile.toMap(),
         ),
       ),
     );
@@ -3308,9 +3309,16 @@ class _LeadsScreenState extends State<LeadsScreen> {
   // }
 
   String _displayName() {
-    final fullName = _text(widget.profile['full_name']);
-    final email = _text(widget.profile['email']);
-    return fullName.isNotEmpty ? fullName : email;
+    return _profile.name.isNotEmpty ? _profile.name : _profile.email;
+  }
+
+  Future<void> _logout() async {
+    await ref.read(authRepositoryProvider).signOut();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
   }
 
   bool _missingName(Map<String, dynamic> lead) {
@@ -3349,14 +3357,6 @@ class _LeadsScreenState extends State<LeadsScreen> {
     if (fullName.isNotEmpty) return fullName;
     if (email.isNotEmpty) return email;
     return 'Unknown user';
-  }
-
-  String _displayUserLabel(Map<String, dynamic> user) {
-    final fullName = _text(user['full_name']);
-    final email = _text(user['email']);
-    if (fullName.isNotEmpty) return fullName;
-    if (email.isNotEmpty) return email;
-    return _text(user['id']);
   }
 
   String _userDisplayById(String? userId) {
@@ -3461,7 +3461,7 @@ class _LeadsScreenState extends State<LeadsScreen> {
                   });
                 },
                 onClearFilters: _clearFilters,
-                onLogout: widget.onLogout,
+                onLogout: _logout,
                 sortBy: _sortBy,
                 onSortChanged: (value) {
                   setState(() {

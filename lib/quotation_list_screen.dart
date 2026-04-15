@@ -957,31 +957,6 @@ class _QuotationListScreenState extends State<QuotationListScreen> {
     }
   }
 
-  // Future<void> _loadQuotations() async {
-  //   try {
-  //     dynamic query = _supabase.from('quotations').select();
-  //
-  //     if (!widget.isAdmin) {
-  //       query = query.eq('created_by', widget.currentUserId);
-  //     }
-  //
-  //     final response = await query.order('created_at', ascending: false);
-  //
-  //     final rows = (response as List)
-  //         .map((e) => Map<String, dynamic>.from(e as Map))
-  //         .toList();
-  //
-  //     if (!mounted) return;
-  //
-  //     setState(() {
-  //       _allQuotations = rows;
-  //       _applyFilters();
-  //     });
-  //   } catch (e) {
-  //     debugPrint('Failed to load quotations: $e');
-  //     rethrow;
-  //   }
-  // }
   Future<void> _loadQuotations() async {
     if (!_canAccessQuotations) {
       throw Exception('You do not have permission to view quotations.');
@@ -1159,148 +1134,6 @@ class _QuotationListScreenState extends State<QuotationListScreen> {
     return _text(user['id']);
   }
 
-  // Widget _buildFilters() {
-  //   return Container(
-  //     padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
-  //     decoration: const BoxDecoration(
-  //       color: Color(0xFF111111),
-  //       border: Border(
-  //         bottom: BorderSide(color: Color(0xFF3A2F0B)),
-  //       ),
-  //     ),
-  //     child: Column(
-  //       children: [
-  //         TextField(
-  //           controller: _searchController,
-  //           decoration: InputDecoration(
-  //             hintText:
-  //             'Search by quote no, customer, company, phone, salesperson...',
-  //             prefixIcon: const Icon(Icons.search),
-  //             suffixIcon: _searchQuery.isEmpty
-  //                 ? null
-  //                 : IconButton(
-  //               onPressed: () {
-  //                 _searchController.clear();
-  //               },
-  //               icon: const Icon(Icons.close),
-  //             ),
-  //           ),
-  //         ),
-  //         const SizedBox(height: 12),
-  //         Row(
-  //           children: [
-  //             Expanded(
-  //               child: DropdownButtonFormField<String?>(
-  //                 value: _selectedStatus,
-  //                 decoration: const InputDecoration(
-  //                   labelText: 'Status',
-  //                 ),
-  //                 items: [
-  //                   const DropdownMenuItem<String?>(
-  //                     value: null,
-  //                     child: Text('All statuses'),
-  //                   ),
-  //                   ..._statuses.map(
-  //                         (status) => DropdownMenuItem<String?>(
-  //                       value: status,
-  //                       child: Text(status),
-  //                     ),
-  //                   ),
-  //                 ],
-  //                 onChanged: (value) {
-  //                   setState(() {
-  //                     _selectedStatus = value;
-  //                     _applyFilters();
-  //                   });
-  //                 },
-  //               ),
-  //             ),
-  //             if (widget.isAdmin) ...[
-  //               const SizedBox(width: 12),
-  //               Expanded(
-  //                 child: DropdownButtonFormField<String?>(
-  //                   value: _selectedUserId,
-  //                   decoration: const InputDecoration(
-  //                     labelText: 'User',
-  //                   ),
-  //                   items: [
-  //                     const DropdownMenuItem<String?>(
-  //                       value: null,
-  //                       child: Text('All users'),
-  //                     ),
-  //                     ..._profiles.map(
-  //                           (user) => DropdownMenuItem<String?>(
-  //                         value: _text(user['id']),
-  //                         child: Text(
-  //                           _userLabel(user),
-  //                           overflow: TextOverflow.ellipsis,
-  //                         ),
-  //                       ),
-  //                     ),
-  //                   ],
-  //                   onChanged: (value) {
-  //                     setState(() {
-  //                       _selectedUserId = value;
-  //                       _applyFilters();
-  //                     });
-  //                   },
-  //                 ),
-  //               ),
-  //             ],
-  //           ],
-  //         ),
-  //         const SizedBox(height: 12),
-  //         Row(
-  //           children: [
-  //             Expanded(
-  //               child: OutlinedButton.icon(
-  //                 style: ButtonStyle( side: WidgetStatePropertyAll( BorderSide( color: AppConstants.primaryColor))),
-  //                 onPressed: _pickFromDate,
-  //                 icon: const Icon(Icons.date_range_outlined),
-  //                 label: Text(
-  //                   _fromDate == null
-  //                       ? 'From date'
-  //                       : 'From: ${_formatDate(_fromDate!.toIso8601String())}',
-  //                 ),
-  //               ),
-  //             ),
-  //             const SizedBox(width: 12),
-  //             Expanded(
-  //               child: OutlinedButton.icon(
-  //                 style: ButtonStyle( side: WidgetStatePropertyAll( BorderSide( color: AppConstants.primaryColor))),
-  //
-  //                 onPressed: _pickToDate,
-  //                 icon: const Icon(Icons.event_outlined),
-  //                 label: Text(
-  //                   _toDate == null
-  //                       ? 'To date'
-  //                       : 'To: ${_formatDate(_toDate!.toIso8601String())}',
-  //                 ),
-  //               ),
-  //             ),
-  //           ],
-  //         ),
-  //         const SizedBox(height: 12),
-  //         Row(
-  //           children: [
-  //             Text(
-  //               '${_filteredQuotations.length} quotation(s)',
-  //               style: const TextStyle(
-  //                 fontWeight: FontWeight.w700,
-  //               ),
-  //             ),
-  //             const Spacer(),
-  //             TextButton.icon(
-  //               onPressed: _clearFilters,
-  //               icon: const Icon(Icons.refresh),
-  //               label: const Text('Clear filters'),
-  //             ),
-  //           ],
-  //         ),
-  //       ],
-  //     ),
-  //   );
-  // }
   Widget _buildFilters() {
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
@@ -1530,6 +1363,9 @@ class _QuotationListScreenState extends State<QuotationListScreen> {
                 itemBuilder: (context, index) {
                   final quote = _filteredQuotations[index];
                   final id = quote['id'];
+                  // Read the brand from the quotation row itself — reliable regardless
+                  // of which screen navigated here.
+                  final isHamasat = quote['is_hamasat'] == true;
 
                   return InkWell(
                     borderRadius: BorderRadius.circular(20),
@@ -1537,6 +1373,7 @@ class _QuotationListScreenState extends State<QuotationListScreen> {
                       Navigator.of(context).push(
                         MaterialPageRoute(
                           builder: (_) => QuotationDetailsScreen(
+                            isHamasat: isHamasat,
                             quotationId: id,
                           ),
                         ),
@@ -1548,7 +1385,9 @@ class _QuotationListScreenState extends State<QuotationListScreen> {
                         color: const Color(0xFF141414),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: const Color(0xFF3A2F0B),
+                          color: isHamasat
+                              ? const Color(0xFF3D2E52)
+                              : const Color(0xFF3A2F0B),
                         ),
                       ),
                       child: Column(
@@ -1581,8 +1420,10 @@ class _QuotationListScreenState extends State<QuotationListScreen> {
                           const SizedBox(height: 8),
                           Text(
                             'Net Total: ${_formatMoney(quote['net_total'])} AED',
-                            style: const TextStyle(
-                              color: AppConstants.primaryColor,
+                            style: TextStyle(
+                              color: isHamasat
+                                  ? const Color(0xFF9B77BA)
+                                  : AppConstants.primaryColor,
                               fontWeight: FontWeight.w800,
                             ),
                           ),

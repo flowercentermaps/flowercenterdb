@@ -1,36 +1,40 @@
 
 import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-class HomeDashboardScreen extends StatefulWidget {
-  final Map<String, dynamic> profile;
-  final Future<void> Function() onLogout;
+import '../../features/auth/domain/entities/user_profile.dart';
+import '../../features/auth/presentation/providers/auth_provider.dart';
+import '../../login_screen.dart';
+
+class HomeDashboardScreen extends ConsumerStatefulWidget {
   final bool showOwnHeader;
   final String? customTitle;
 
   const HomeDashboardScreen({
     super.key,
-    required this.profile,
-    required this.onLogout,
     this.showOwnHeader = true,
     this.customTitle,
   });
 
   @override
-  State<HomeDashboardScreen> createState() => _HomeDashboardScreenState();
+  ConsumerState<HomeDashboardScreen> createState() => _HomeDashboardScreenState();
 }
 
-class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
+class _HomeDashboardScreenState extends ConsumerState<HomeDashboardScreen> {
   final SupabaseClient _supabase = Supabase.instance.client;
+
+  UserProfile get _profile =>
+      ref.read(profileProvider).value ??
+      const UserProfile(id: '', email: '', name: '', role: '', isActive: false);
 
   bool _isLoading = true;
   String? _error;
   Map<String, dynamic>? _leadStats;
   Map<String, dynamic>? _followUpStats;
 
-  String get _role =>
-      (widget.profile['role'] ?? '').toString().trim().toLowerCase();
+  String get _role => _profile.role.trim().toLowerCase();
 
   @override
   void initState() {
@@ -85,9 +89,16 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
   }
 
   String _displayName() {
-    final fullName = (widget.profile['full_name'] ?? '').toString().trim();
-    final email = (widget.profile['email'] ?? '').toString().trim();
-    return fullName.isNotEmpty ? fullName : email;
+    return _profile.name.isNotEmpty ? _profile.name : _profile.email;
+  }
+
+  Future<void> _logout() async {
+    await ref.read(authRepositoryProvider).signOut();
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (_) => false,
+    );
   }
 
   @override
@@ -105,7 +116,7 @@ class _HomeDashboardScreenState extends State<HomeDashboardScreen> {
               profileName: _displayName(),
               role: _role,
               onRefresh: _loadDashboard,
-              onLogout: widget.onLogout,
+              onLogout: _logout,
             ),
             Expanded(
               child: AnimatedSwitcher(
