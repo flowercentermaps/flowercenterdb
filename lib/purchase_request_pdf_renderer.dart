@@ -33,7 +33,7 @@ class PurchaseRequestPdfRenderer {
     _fontArabicBold ??= pw.Font.ttf(
         await rootBundle.load('assets/fonts/NotoSansArabic-Bold.ttf'));
     if (_logoImage == null) {
-      final logo = await rootBundle.load('assets/icons/logo.png');
+      final logo = await rootBundle.load('assets/icons/logo_full.png');
       _logoImage = pw.MemoryImage(logo.buffer.asUint8List());
     }
   }

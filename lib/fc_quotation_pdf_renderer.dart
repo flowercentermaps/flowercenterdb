@@ -52,7 +52,7 @@ class FCQuotationPdfRenderer {
     }
 
     if (_logoImage == null) {
-      final logo = await rootBundle.load('assets/icons/logo.png');
+      final logo = await rootBundle.load('assets/icons/logo_full.png');
       _logoImage = pw.MemoryImage(logo.buffer.asUint8List());
     }
   }

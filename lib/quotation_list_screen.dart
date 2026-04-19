@@ -1375,6 +1375,7 @@ class _QuotationListScreenState extends State<QuotationListScreen> {
                           builder: (_) => QuotationDetailsScreen(
                             isHamasat: isHamasat,
                             quotationId: id,
+                            isAdmin: widget.role == 'admin',
                           ),
                         ),
                       );

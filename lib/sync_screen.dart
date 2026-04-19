@@ -32,17 +32,34 @@ class _SyncScreenState extends State<SyncScreen> {
   int _scheduleMinute = 0;
   bool _scheduleSaving = false;
 
+  // SQL Config
+  final _serverCtrl   = TextEditingController();
+  final _databaseCtrl = TextEditingController();
+  final _userCtrl     = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  bool _passwordSet   = false;
+  bool _showPassword  = false;
+  bool _configSaving  = false;
+  bool _configTesting = false;
+  String? _testResult;
+  bool _testOk = false;
+
   @override
   void initState() {
     super.initState();
     _loadStatus();
     _loadSchedule();
+    _loadConfig();
     _startPolling();
   }
 
   @override
   void dispose() {
     _pollTimer?.cancel();
+    _serverCtrl.dispose();
+    _databaseCtrl.dispose();
+    _userCtrl.dispose();
+    _passwordCtrl.dispose();
     super.dispose();
   }
 
@@ -51,6 +68,81 @@ class _SyncScreenState extends State<SyncScreen> {
       const Duration(seconds: 4),
       (_) => _loadStatus(),
     );
+  }
+
+  Future<void> _loadConfig() async {
+    try {
+      final res = await http
+          .get(Uri.parse('$_base/api/config'))
+          .timeout(const Duration(seconds: 3));
+      if (!mounted) return;
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      setState(() {
+        _serverCtrl.text   = data['server']   as String? ?? '';
+        _databaseCtrl.text = data['database'] as String? ?? '';
+        _userCtrl.text     = data['user']     as String? ?? '';
+        _passwordSet       = data['passwordSet'] as bool? ?? false;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _saveConfig() async {
+    final server   = _serverCtrl.text.trim();
+    final database = _databaseCtrl.text.trim();
+    final user     = _userCtrl.text.trim();
+    final password = _passwordCtrl.text;
+    if (server.isEmpty || database.isEmpty || user.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Server, Database and User are required.')),
+      );
+      return;
+    }
+    setState(() => _configSaving = true);
+    try {
+      await http.post(
+        Uri.parse('$_base/api/config'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'server': server, 'database': database,
+          'user': user, 'password': password,
+        }),
+      ).timeout(const Duration(seconds: 5));
+      if (!mounted) return;
+      setState(() { _passwordSet = password.isNotEmpty; _testResult = null; });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Config saved ✓'),
+          backgroundColor: Color(0xFF22c55e),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _configSaving = false);
+    }
+  }
+
+  Future<void> _testConnection() async {
+    setState(() { _configTesting = true; _testResult = null; });
+    try {
+      final res = await http.post(Uri.parse('$_base/api/test-connection'))
+          .timeout(const Duration(seconds: 12));
+      if (!mounted) return;
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      setState(() {
+        _testOk     = data['ok'] as bool? ?? false;
+        _testResult = _testOk
+            ? '✓ Connected — ${data['version'] ?? 'OK'}'
+            : '✗ ${data['error'] ?? 'Connection failed'}';
+      });
+    } catch (e) {
+      if (mounted) setState(() { _testOk = false; _testResult = '✗ $e'; });
+    } finally {
+      if (mounted) setState(() => _configTesting = false);
+    }
   }
 
   Future<void> _loadStatus() async {
@@ -303,6 +395,143 @@ class _SyncScreenState extends State<SyncScreen> {
           ],
 
           const SizedBox(height: 20),
+
+          // ── SQL Server config ─────────────────────────────────────────────
+          _Card(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('SQL Server Connection',
+                    style: TextStyle(color: Colors.white,
+                        fontSize: 14, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                const Text('Saved to this machine — copy the sync folder to move.',
+                    style: TextStyle(color: Colors.white38, fontSize: 11)),
+                const SizedBox(height: 14),
+
+                _ConfigField(
+                  label: 'Server',
+                  hint: r'localhost\SQL2008R2  or  192.168.1.5\SQLEXPRESS',
+                  controller: _serverCtrl,
+                ),
+                const SizedBox(height: 10),
+                _ConfigField(
+                  label: 'Database',
+                  hint: 'e.g. KD_FLOWER_CENTER_LLC_2026_SHJ_BR24',
+                  controller: _databaseCtrl,
+                ),
+                const SizedBox(height: 10),
+                Row(children: [
+                  Expanded(
+                    child: _ConfigField(
+                      label: 'Username',
+                      hint: 'sa',
+                      controller: _userCtrl,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _ConfigField(
+                      label: _passwordSet && _passwordCtrl.text.isEmpty
+                          ? 'Password (saved — leave blank to keep)'
+                          : 'Password',
+                      hint: '••••••',
+                      controller: _passwordCtrl,
+                      obscure: !_showPassword,
+                      suffix: IconButton(
+                        icon: Icon(
+                          _showPassword
+                              ? Icons.visibility_off_rounded
+                              : Icons.visibility_rounded,
+                          size: 18, color: Colors.white38,
+                        ),
+                        onPressed: () =>
+                            setState(() => _showPassword = !_showPassword),
+                      ),
+                    ),
+                  ),
+                ]),
+
+                if (_testResult != null) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: (_testOk
+                              ? const Color(0xFF22c55e)
+                              : const Color(0xFFef4444))
+                          .withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: _testOk
+                            ? const Color(0xFF22c55e)
+                            : const Color(0xFFef4444),
+                      ),
+                    ),
+                    child: Text(
+                      _testResult!,
+                      style: TextStyle(
+                        color: _testOk
+                            ? const Color(0xFF22c55e)
+                            : const Color(0xFFf87171),
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ),
+                ],
+
+                const SizedBox(height: 14),
+                Row(children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: (_configTesting || _statusError != null)
+                          ? null
+                          : _testConnection,
+                      icon: _configTesting
+                          ? const SizedBox(
+                              width: 14, height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Color(0xFF22c55e),
+                              ))
+                          : const Icon(Icons.electrical_services_rounded,
+                              size: 16),
+                      label: Text(
+                          _configTesting ? 'Testing…' : 'Test Connection'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF22c55e),
+                        side: const BorderSide(color: Color(0xFF22c55e)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _configSaving ? null : _saveConfig,
+                      icon: _configSaving
+                          ? const SizedBox(
+                              width: 14, height: 14,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.black))
+                          : const Icon(Icons.save_rounded, size: 16),
+                      label: Text(_configSaving ? 'Saving…' : 'Save Config'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF3b82f6),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                      ),
+                    ),
+                  ),
+                ]),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 12),
 
           // ── Schedule section ──────────────────────────────────────────────
           _Card(
@@ -571,4 +800,53 @@ class _DropdownField<T> extends StatelessWidget {
           ),
         ],
       );
+}
+
+class _ConfigField extends StatelessWidget {
+  final String label;
+  final String hint;
+  final TextEditingController controller;
+  final bool obscure;
+  final Widget? suffix;
+
+  const _ConfigField({
+    required this.label,
+    required this.hint,
+    required this.controller,
+    this.obscure = false,
+    this.suffix,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      obscureText: obscure,
+      style: const TextStyle(color: Colors.white, fontSize: 13),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: const TextStyle(color: Colors.white54, fontSize: 12),
+        hintText: hint,
+        hintStyle: const TextStyle(color: Colors.white24, fontSize: 12),
+        suffixIcon: suffix,
+        isDense: true,
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        filled: true,
+        fillColor: const Color(0xFF1a1a1a),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Colors.white12),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Colors.white12),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Color(0xFF3b82f6), width: 1.4),
+        ),
+      ),
+    );
+  }
 }

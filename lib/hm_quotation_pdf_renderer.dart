@@ -89,9 +89,9 @@ class HMQuotationPdfRenderer {
           _buildItemsTable(preparedItems),
           pw.SizedBox(height: 12),
           _buildBottomSection(quotation),
-          pw.SizedBox(height: 14),
-          _buildBankDetailsSection(),
           pw.NewPage(),
+          _buildBankDetailsSection(),
+          pw.SizedBox(height: 14),
           _buildTermsSection(),
         ],
       ),
@@ -600,20 +600,67 @@ class HMQuotationPdfRenderer {
   }
 
   pw.Widget _buildBankDetailsSection() {
-    return _boxedSection(
-      title: 'Bank Details',
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          _labelValueRow('Beneficiary', 'HAMASAT FLOWERS TR LLC'),
-          _labelValueRow('Account No', '18865788'),
-          _labelValueRow('IBAN', 'AE920500000000018865788'),
-          _labelValueRow('Currency', 'AED'),
-          _labelValueRow('Bank', 'Abu Dhabi Islamic Bank ( ADIB )'),
-          _labelValueRow('Branch', 'Dafza, dubai airport free zone'),
-          _labelValueRow('SWIFT', 'ABDIAEAD'),
-        ],
-      ),
+    const rows = [
+      ['Beneficiary', 'HAMASAT FLOWERS TR LLC'],
+      ['Account No',  '18865788'],
+      ['IBAN',        'AE920500000000018865788'],
+      ['Currency',    'AED'],
+      ['Bank',        'Abu Dhabi Islamic Bank ( ADIB )'],
+      ['Branch',      'Dafza, dubai airport free zone'],
+      ['SWIFT',       'ABDIAEAD'],
+    ];
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: [
+        // Header bar
+        pw.Container(
+          width: double.infinity,
+          padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          decoration: pw.BoxDecoration(
+            color: softGray,
+            border: pw.Border.all(color: lineGray, width: 0.8),
+          ),
+          child: pw.Text(
+            'Bank Details',
+            style: pw.TextStyle(font: _fontBold, fontSize: 9, color: brandDark),
+          ),
+        ),
+        // Rows table
+        pw.Table(
+          border: pw.TableBorder(
+            left:             pw.BorderSide(color: lineGray, width: 0.8),
+            right:            pw.BorderSide(color: lineGray, width: 0.8),
+            bottom:           pw.BorderSide(color: lineGray, width: 0.8),
+            horizontalInside: pw.BorderSide(color: lineGray, width: 0.4),
+          ),
+          columnWidths: const {
+            0: pw.FixedColumnWidth(90),
+            1: pw.FlexColumnWidth(),
+          },
+          children: rows.map((r) {
+            return pw.TableRow(
+              verticalAlignment: pw.TableCellVerticalAlignment.middle,
+              children: [
+                pw.Padding(
+                  padding: const pw.EdgeInsets.fromLTRB(8, 6, 4, 6),
+                  child: pw.Text(
+                    r[0],
+                    style: pw.TextStyle(font: _fontBold, fontSize: 8.5),
+                  ),
+                ),
+                pw.Padding(
+                  padding: const pw.EdgeInsets.fromLTRB(4, 6, 8, 6),
+                  child: pw.Text(
+                    r[1],
+                    style: pw.TextStyle(font: _fontRegular, fontSize: 8.5),
+                  ),
+                ),
+              ],
+            );
+          }).toList(),
+        ),
+      ],
     );
   }
 

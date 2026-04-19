@@ -1,5 +1,5 @@
 #define MyAppName "Flower Center CRM"
-#define MyAppVersion "1.3.3"
+#define MyAppVersion "1.0.4"
 #define MyAppPublisher "Flower Center"
 #define MyAppURL "https://flowercenter.ae"
 #define MyAppExeName "FlowerCenterCrm.exe"

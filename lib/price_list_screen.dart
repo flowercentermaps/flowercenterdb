@@ -98,6 +98,7 @@ class _QuotationDraft {
   final double deliveryFee;
   final double installationFee;
   final double additionalDetailsFee;
+  final double discountAmount;
   final double vatPercent;
 
   const _QuotationDraft({
@@ -112,6 +113,7 @@ class _QuotationDraft {
     required this.deliveryFee,
     required this.installationFee,
     required this.additionalDetailsFee,
+    required this.discountAmount,
     required this.vatPercent,
   });
 }
@@ -619,8 +621,9 @@ class _PriceListScreenState extends ConsumerState<PriceListScreen> {
         draft.deliveryFee +
         draft.installationFee +
         draft.additionalDetailsFee;
-    final vatAmount = taxableTotal * (draft.vatPercent / 100);
-    final netTotal = taxableTotal + vatAmount;
+    final afterDiscount = (taxableTotal - draft.discountAmount).clamp(0.0, double.infinity);
+    final vatAmount = afterDiscount * (draft.vatPercent / 100);
+    final netTotal = afterDiscount + vatAmount;
 
     final quoteNo = 'QT-${DateTime.now().microsecondsSinceEpoch}';
 
@@ -640,6 +643,7 @@ class _PriceListScreenState extends ConsumerState<PriceListScreen> {
       'delivery_fee': draft.deliveryFee,
       'installation_fee': draft.installationFee,
       'additional_details_fee': draft.additionalDetailsFee,
+      'discount_amount': draft.discountAmount,
       'taxable_total': taxableTotal,
       'vat_percent': draft.vatPercent,
       'vat_amount': vatAmount,
@@ -751,6 +755,7 @@ class _PriceListScreenState extends ConsumerState<PriceListScreen> {
           builder: (_) => QuotationDetailsScreen(
             quotationId: quotationId,
             isHamasat: isHamasat,
+            isAdmin: _isAdmin,
           ),
         ),
       );
@@ -3796,6 +3801,7 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
   final _deliveryFeeController = TextEditingController(text: '0');
   final _installationFeeController = TextEditingController(text: '0');
   final _additionalDetailsFeeController = TextEditingController(text: '0');
+  final _discountAmountController = TextEditingController(text: '');
   final _vatPercentController = TextEditingController(text: '5');
 
   // Auto-fill suggestion
@@ -3813,6 +3819,7 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
     _deliveryFeeController.addListener(_rebuild);
     _installationFeeController.addListener(_rebuild);
     _additionalDetailsFeeController.addListener(_rebuild);
+    _discountAmountController.addListener(_rebuild);
     _vatPercentController.addListener(_rebuild);
 
     _customerPhoneController.addListener(() => _scheduleAutoFill('phone'));
@@ -3890,6 +3897,7 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
     _deliveryFeeController.dispose();
     _installationFeeController.dispose();
     _additionalDetailsFeeController.dispose();
+    _discountAmountController.dispose();
     _vatPercentController.dispose();
     super.dispose();
   }
@@ -3902,14 +3910,18 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
   double get _installationFee => _parseNumber(_installationFeeController.text);
   double get _additionalDetailsFee =>
       _parseNumber(_additionalDetailsFeeController.text);
+  double get _discountAmount => _parseNumber(_discountAmountController.text);
   double get _vatPercent => _parseNumber(_vatPercentController.text);
 
   double get _taxableTotal =>
       widget.subtotal + _deliveryFee + _installationFee + _additionalDetailsFee;
 
-  double get _vatAmount => _taxableTotal * (_vatPercent / 100);
+  // Discount is applied before VAT
+  double get _afterDiscount => (_taxableTotal - _discountAmount).clamp(0, double.infinity);
 
-  double get _netTotal => _taxableTotal + _vatAmount;
+  double get _vatAmount => _afterDiscount * (_vatPercent / 100);
+
+  double get _netTotal => _afterDiscount + _vatAmount;
 
   String? _validateNumber(String? value) {
     if (value == null || value.trim().isEmpty) return null;
@@ -3948,6 +3960,7 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
         deliveryFee: _deliveryFee,
         installationFee: _installationFee,
         additionalDetailsFee: _additionalDetailsFee,
+        discountAmount: _discountAmount,
         vatPercent: _vatPercent,
       ),
     );
@@ -4173,6 +4186,18 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
                           _AdaptiveField(
                             isMobile: isMobile,
                             child: TextFormField(
+                              controller: _discountAmountController,
+                              validator: _validateNumber,
+                              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                              decoration: const InputDecoration(
+                                labelText: 'Discount (AED)',
+                                prefixIcon: Icon(Icons.local_offer_outlined),
+                              ),
+                            ),
+                          ),
+                          _AdaptiveField(
+                            isMobile: isMobile,
+                            child: TextFormField(
                               enabled: false,
                               controller: _vatPercentController,
                               validator: _validateNumber,
@@ -4214,6 +4239,13 @@ class _CreateQuotationSheetState extends State<_CreateQuotationSheet> {
                               label: 'Taxable Total',
                               value: widget.formatPrice(_taxableTotal),
                             ),
+                            if (_discountAmount > 0)
+                              _SummaryRow(
+                                label: 'Discount',
+                                value: '− ${widget.formatPrice(_discountAmount)}',
+                                highlight: true,
+                                highlightColor: Colors.green.shade400,
+                              ),
                             _SummaryRow(
                               label: 'VAT Amount',
                               value: widget.formatPrice(_vatAmount),

@@ -906,15 +906,78 @@ class _AdminExportSheet extends StatefulWidget {
 }
 
 class _AdminExportSheetState extends State<_AdminExportSheet> {
+  final SupabaseClient _supabase = Supabase.instance.client;
+
   bool _exportingPdf  = false;
   bool _exportingXlsx = false;
+  bool _submitting    = false;
 
-  String get _refNumber  => 'PR-${DateTime.now().millisecondsSinceEpoch}';
+  // Single ref shared across export + submit in this sheet session
+  late final String _ref = 'PR-${DateTime.now().millisecondsSinceEpoch}';
+
+  String get _refNumber => _ref;
   String get _dateString {
     final now = DateTime.now();
     return '${now.day.toString().padLeft(2, '0')}/'
         '${now.month.toString().padLeft(2, '0')}/'
         '${now.year}';
+  }
+
+  // ── Submit as admin's own request (auto-approved) ──────────────────────────
+
+  Future<void> _submitAsRequest() async {
+    setState(() => _submitting = true);
+    try {
+      final user = _supabase.auth.currentUser;
+      if (user == null) throw Exception('Not signed in');
+
+      // Fetch admin's display name
+      String adminName = '';
+      try {
+        final profile = await _supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', user.id)
+            .single();
+        adminName = (profile['full_name'] as String? ?? '').trim();
+      } catch (_) {}
+
+      final now = DateTime.now().toUtc().toIso8601String();
+
+      // Insert request — already approved (admin owns it)
+      final row = await _supabase.from('purchase_requests').insert({
+        'ref_number':      _ref,
+        'created_by':      user.id,
+        'created_by_name': adminName.isNotEmpty ? adminName : (user.email ?? ''),
+        'status':          'approved',
+        'reviewed_by':     user.id,
+        'reviewed_at':     now,
+        'admin_notes':     'Created directly by admin',
+      }).select().single();
+
+      final requestId = (row['id'] as num).toInt();
+
+      // Insert items
+      await _supabase.from('purchase_request_items').insert(
+        widget.items.map((item) => item.toDbMap(requestId)).toList(),
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Saved as $_ref'),
+          backgroundColor: const Color(0xFF2E7D32),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      Navigator.of(context).pop();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Submit failed: $e')));
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
   }
 
   Future<void> _exportPdf() async {
@@ -1029,7 +1092,7 @@ class _AdminExportSheetState extends State<_AdminExportSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final busy = _exportingPdf || _exportingXlsx;
+    final busy = _exportingPdf || _exportingXlsx || _submitting;
     return SafeArea(
       child: FractionallySizedBox(
         heightFactor: 0.88,
@@ -1068,6 +1131,7 @@ class _AdminExportSheetState extends State<_AdminExportSheet> {
                 ),
               ),
               const SizedBox(height: 16),
+              // ── Export row ───────────────────────────────────────────────
               Row(
                 children: [
                   Expanded(
@@ -1096,6 +1160,33 @@ class _AdminExportSheetState extends State<_AdminExportSheet> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 10),
+              // ── Save as tracked request ──────────────────────────────────
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: busy ? null : _submitAsRequest,
+                  icon: _submitting
+                      ? const SizedBox(
+                          width: 16, height: 16,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: AppConstants.primaryColor))
+                      : const Icon(Icons.bookmark_add_outlined),
+                  label: const Text('Save as My Request'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppConstants.primaryColor,
+                    side: BorderSide(
+                        color: AppConstants.primaryColor.withOpacity(0.45)),
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Logs this order in your request history for tracking',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 11, color: Colors.white38),
               ),
             ],
           ),

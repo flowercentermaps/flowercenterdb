@@ -16,9 +16,13 @@ import '../../user_role_management_screen.dart';
 import 'agent_performance_screen.dart';
 import 'follow_up_screen.dart';
 import 'home_dashboard_screen.dart';
+import 'invoices_screen.dart';
 import 'leads_screen.dart';
 import 'notifications_screen.dart';
 import 'purchase_request_screen.dart';
+import 'quotations_screen.dart';
+import 'sales_analytics_screen.dart';
+import 'woocommerce_screen.dart';
 
 class CrmShellScreen extends ConsumerStatefulWidget {
   const CrmShellScreen({super.key});
@@ -389,6 +393,17 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
       // ),
     ];
 
+    // Quotations — visible to all roles
+    items.add(
+      _CrmNavItem(
+        keyName: 'quotations',
+        label: 'Quotations',
+        icon: Icons.description_outlined,
+        badgeCount: 0,
+        builder: () => QuotationsScreen(isAdmin: _isAdmin),
+      ),
+    );
+
     // Purchase Request — visible to all roles
     items.add(
       _CrmNavItem(
@@ -400,8 +415,35 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
       ),
     );
 
-    if (_isAdmin) {
+    // Invoices — visible to admin, accountant, and sales roles
+    if (_isAdmin || _isAccountant || _isSales) {
       items.add(
+        _CrmNavItem(
+          keyName: 'invoices',
+          label: 'Invoices',
+          icon: Icons.receipt_long_outlined,
+          badgeCount: 0,
+          builder: () => InvoicesScreen(isAdmin: _isAdmin || _isAccountant),
+        ),
+      );
+    }
+
+    if (_isAdmin) {
+      items.addAll([
+        _CrmNavItem(
+          keyName: 'sales_analytics',
+          label: 'Sales Analytics',
+          icon: Icons.analytics_outlined,
+          badgeCount: 0,
+          builder: () => const SalesAnalyticsScreen(),
+        ),
+        _CrmNavItem(
+          keyName: 'woocommerce',
+          label: 'Website Stats',
+          icon: Icons.language_outlined,
+          badgeCount: 0,
+          builder: () => const WooCommerceScreen(),
+        ),
         _CrmNavItem(
           keyName: 'statistics',
           label: 'nav_statistics'.tr(),
@@ -413,7 +455,7 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
             showOwnHeader: false,
           ),
         ),
-      );
+      ]);
 
       // if (_canAssignLeads) {
       //   items.add(
@@ -467,13 +509,13 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
         _CrmNavItem(
           keyName: 'accounting_tools',
           label: 'nav_accounting'.tr(),
-          icon: Icons.receipt_long_outlined,
+          icon: Icons.calculate_outlined,
           badgeCount: _badgeCountFor('accounting_tools'),
-          builder: () =>  _PlaceholderModule(
+          builder: () => _PlaceholderModule(
             title: 'Accounting'.tr(),
             subtitle:
-            'Accountant role is active. Add quotation/accounting tools here next.',
-            icon: Icons.receipt_long_outlined,
+                'Accountant role is active. Add quotation/accounting tools here next.',
+            icon: Icons.calculate_outlined,
           ),
         ),
       );
