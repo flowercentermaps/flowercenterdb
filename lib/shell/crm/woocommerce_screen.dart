@@ -304,8 +304,15 @@ class _WooCommerceScreenState extends State<WooCommerceScreen>
   late final TabController _tabController;
   static const _tabCount = 7;
 
+  // ---- Period filter ------------------------------------------------------
+  static const _periods = ['day', 'week', 'month', 'year', 'all'];
+  static const _periodLabels = ['Today', 'Week', 'Month', 'Year', 'All Time'];
+  int _periodIndex = 4; // default: all time
+  String get _period => _periods[_periodIndex];
+
   // ---- Loading state ------------------------------------------------------
   bool _loading = true;
+  bool _loadingPeriod = false;
 
   // ---- Per-section error strings (null = ok) ------------------------------
   String? _errorRevenue;
@@ -321,9 +328,7 @@ class _WooCommerceScreenState extends State<WooCommerceScreen>
   String? _errorReviews;
 
   // ---- Data ---------------------------------------------------------------
-  _SalesReport? _dayReport;
-  _SalesReport? _weekReport;
-  _SalesReport? _monthReport;
+  _SalesReport? _salesReport;
 
   List<_OrderTotal> _orderTotals = [];
   List<_Order> _recentOrders = [];
@@ -363,12 +368,48 @@ class _WooCommerceScreenState extends State<WooCommerceScreen>
   }
 
   Future<_SalesReport> _fetchSalesReport(String period) async {
-    final data = await _getJson('reports/sales?period=$period');
-    if (data is List && data.isNotEmpty) {
-      return _SalesReport.fromJson(data.first as Map<String, dynamic>);
+    final after = _afterDateForPeriod(period == 'all' ? 'all' : period);
+    final afterParam = after != null ? '&after=${Uri.encodeComponent(after)}' : '';
+    final data = await _getJson(
+        'orders?status=completed&per_page=100&orderby=date&order=desc'
+        '$afterParam&_fields=id,total,total_refunds');
+    if (data is! List) throw Exception('Unexpected format for orders');
+    double total = 0;
+    double refunds = 0;
+    for (final o in data) {
+      total += double.tryParse(o['total']?.toString() ?? '0') ?? 0;
+      refunds += double.tryParse(o['total_refunds']?.toString() ?? '0') ?? 0;
     }
-    if (data is Map<String, dynamic>) return _SalesReport.fromJson(data);
-    throw Exception('Unexpected format for sales report');
+    return _SalesReport(
+      totalSales: total,
+      netSales: total + refunds,
+      totalOrders: data.length,
+      totalRefunds: refunds.abs(),
+    );
+  }
+
+  // Returns null for 'all' (no date filtering)
+  String? _afterDateForPeriod(String period) {
+    final now = DateTime.now();
+    late DateTime from;
+    switch (period) {
+      case 'all':
+        return null;
+      case 'day':
+        from = DateTime(now.year, now.month, now.day);
+        break;
+      case 'week':
+        from = now.subtract(Duration(days: now.weekday - 1));
+        from = DateTime(from.year, from.month, from.day);
+        break;
+      case 'year':
+        from = DateTime(now.year, 1, 1);
+        break;
+      case 'month':
+      default:
+        from = DateTime(now.year, now.month, 1);
+    }
+    return from.toIso8601String();
   }
 
   Future<List<_OrderTotal>> _fetchOrderTotals() async {
@@ -381,9 +422,12 @@ class _WooCommerceScreenState extends State<WooCommerceScreen>
     throw Exception('Unexpected format for order totals');
   }
 
-  Future<List<_Order>> _fetchRecentOrders() async {
+  Future<List<_Order>> _fetchRecentOrders([String? period]) async {
+    final after = _afterDateForPeriod(period ?? _period);
+    final afterParam = after != null ? '&after=${Uri.encodeComponent(after)}' : '';
     final data = await _getJson(
-        'orders?per_page=15&orderby=date&order=desc'
+        'orders?per_page=50&orderby=date&order=desc'
+        '$afterParam'
         '&_fields=id,number,status,total,billing,date_created');
     if (data is List) {
       return data
@@ -393,15 +437,38 @@ class _WooCommerceScreenState extends State<WooCommerceScreen>
     throw Exception('Unexpected format for orders');
   }
 
-  Future<List<_TopSeller>> _fetchTopSellers() async {
-    final data =
-        await _getJson('reports/top_sellers?period=month&per_page=10');
-    if (data is List) {
-      return data
-          .map((e) => _TopSeller.fromJson(e as Map<String, dynamic>))
-          .toList();
+  Future<List<_TopSeller>> _fetchTopSellers([String? period]) async {
+    final after = _afterDateForPeriod(period ?? _period);
+    final afterParam = after != null ? '&after=${Uri.encodeComponent(after)}' : '';
+    // Fetch completed orders with line items and aggregate client-side
+    final data = await _getJson(
+        'orders?status=completed&per_page=100&orderby=date&order=desc'
+        '$afterParam'
+        '&_fields=id,line_items');
+    if (data is! List) throw Exception('Unexpected format for orders');
+
+    final Map<int, _TopSeller> totals = {};
+    for (final order in data) {
+      final lineItems = order['line_items'] as List? ?? [];
+      for (final item in lineItems) {
+        final productId = int.tryParse(item['product_id']?.toString() ?? '0') ?? 0;
+        final name = item['name']?.toString() ?? '';
+        final qty = int.tryParse(item['quantity']?.toString() ?? '0') ?? 0;
+        if (productId == 0) continue;
+        if (totals.containsKey(productId)) {
+          totals[productId] = _TopSeller(
+            name: totals[productId]!.name,
+            productId: productId,
+            quantity: totals[productId]!.quantity + qty,
+          );
+        } else {
+          totals[productId] = _TopSeller(name: name, productId: productId, quantity: qty);
+        }
+      }
     }
-    throw Exception('Unexpected format for top sellers');
+    final sorted = totals.values.toList()
+      ..sort((a, b) => b.quantity.compareTo(a.quantity));
+    return sorted.take(10).toList();
   }
 
   Future<List<_StockProduct>> _fetchOutOfStock() async {
@@ -429,13 +496,22 @@ class _WooCommerceScreenState extends State<WooCommerceScreen>
   }
 
   Future<List<_CustomerStat>> _fetchCustomerStats() async {
-    final data = await _getJson('reports/customers/totals');
-    if (data is List) {
-      return data
-          .map((e) => _CustomerStat.fromJson(e as Map<String, dynamic>))
-          .toList();
+    final data = await _getJson(
+        'orders?status=any&per_page=100&_fields=id,status,billing');
+    if (data is! List) throw Exception('Unexpected format for orders');
+    final payingEmails = <String>{};
+    final allEmails = <String>{};
+    for (final o in data) {
+      final email = (o['billing']?['email'] ?? '').toString().trim().toLowerCase();
+      if (email.isEmpty) continue;
+      allEmails.add(email);
+      final status = o['status']?.toString() ?? '';
+      if (status == 'completed') payingEmails.add(email);
     }
-    throw Exception('Unexpected format for customer totals');
+    return [
+      _CustomerStat(slug: 'paying_customers', name: 'Paying customers', total: payingEmails.length),
+      _CustomerStat(slug: 'customers', name: 'Total customers', total: allEmails.length),
+    ];
   }
 
   Future<List<_Customer>> _fetchTopCustomers() async {
@@ -475,12 +551,15 @@ class _WooCommerceScreenState extends State<WooCommerceScreen>
   }
 
   Future<List<_Order>> _fetchRefunds() async {
+    // Fetch with status=any and filter client-side — some WooCommerce setups
+    // don't return results for status=refunded directly.
     final data = await _getJson(
-        'orders?status=refunded&per_page=15&orderby=date&order=desc'
+        'orders?status=any&per_page=100&orderby=date&order=desc'
         '&_fields=id,number,status,total,billing,date_created');
     if (data is List) {
       return data
           .map((e) => _Order.fromJson(e as Map<String, dynamic>))
+          .where((o) => o.status == 'refunded')
           .toList();
     }
     throw Exception('Unexpected format for refunded orders');
@@ -524,25 +603,11 @@ class _WooCommerceScreenState extends State<WooCommerceScreen>
     });
 
     await Future.wait([
-      // Revenue (day/week/month)
-      _fetchSalesReport('day').then((v) {
-        if (mounted) setState(() => _dayReport = v);
+      // Revenue for selected period
+      _fetchSalesReport(_period).then((v) {
+        if (mounted) setState(() => _salesReport = v);
       }).catchError((e) {
         if (mounted) setState(() => _errorRevenue = e.toString());
-      }),
-      _fetchSalesReport('week').then((v) {
-        if (mounted) setState(() => _weekReport = v);
-      }).catchError((e) {
-        if (mounted && _errorRevenue == null) {
-          setState(() => _errorRevenue = e.toString());
-        }
-      }),
-      _fetchSalesReport('month').then((v) {
-        if (mounted) setState(() => _monthReport = v);
-      }).catchError((e) {
-        if (mounted && _errorRevenue == null) {
-          setState(() => _errorRevenue = e.toString());
-        }
       }),
       // Order totals
       _fetchOrderTotals().then((v) {
@@ -616,6 +681,34 @@ class _WooCommerceScreenState extends State<WooCommerceScreen>
     if (mounted) setState(() => _loading = false);
   }
 
+  Future<void> _reloadPeriodData() async {
+    if (!mounted) return;
+    setState(() {
+      _loadingPeriod = true;
+      _errorRevenue = null;
+      _errorRecentOrders = null;
+      _errorTopSellers = null;
+    });
+    await Future.wait([
+      _fetchSalesReport(_period).then((v) {
+        if (mounted) setState(() => _salesReport = v);
+      }).catchError((e) {
+        if (mounted) setState(() => _errorRevenue = e.toString());
+      }),
+      _fetchRecentOrders().then((v) {
+        if (mounted) setState(() => _recentOrders = v);
+      }).catchError((e) {
+        if (mounted) setState(() => _errorRecentOrders = e.toString());
+      }),
+      _fetchTopSellers().then((v) {
+        if (mounted) setState(() => _topSellers = v);
+      }).catchError((e) {
+        if (mounted) setState(() => _errorTopSellers = e.toString());
+      }),
+    ]);
+    if (mounted) setState(() => _loadingPeriod = false);
+  }
+
   // ---- Build --------------------------------------------------------------
 
   @override
@@ -632,6 +725,16 @@ class _WooCommerceScreenState extends State<WooCommerceScreen>
         ),
         iconTheme: const IconThemeData(color: Colors.white70),
         actions: [
+          if (_loadingPeriod)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 12),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                    color: AppConstants.primaryColor, strokeWidth: 2),
+              ),
+            ),
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.white70),
             onPressed: _loadAll,
@@ -646,9 +749,15 @@ class _WooCommerceScreenState extends State<WooCommerceScreen>
             )
           : Column(
               children: [
-                // ── Fixed top: Revenue KPIs ──
+                // ── Period filter ──
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: _buildPeriodSelector(),
+                ),
+                const SizedBox(height: 10),
+                // ── Revenue KPI ──
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
                   child: _buildRevenueSection(),
                 ),
                 const SizedBox(height: 14),
@@ -714,43 +823,65 @@ class _WooCommerceScreenState extends State<WooCommerceScreen>
   }
 
   // =========================================================================
-  // Section 1 – Revenue KPI cards
+  // Period selector
+  // =========================================================================
+
+  Widget _buildPeriodSelector() {
+    return Row(
+      children: List.generate(_periods.length, (i) {
+        final selected = i == _periodIndex;
+        return Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: GestureDetector(
+            onTap: () {
+              if (_periodIndex == i) return;
+              setState(() => _periodIndex = i);
+              _reloadPeriodData();
+            },
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              decoration: BoxDecoration(
+                color: selected
+                    ? AppConstants.primaryColor
+                    : const Color(0xFF161616),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: selected
+                      ? AppConstants.primaryColor
+                      : const Color(0xFF2A220A),
+                ),
+              ),
+              child: Text(
+                _periodLabels[i],
+                style: TextStyle(
+                  color: selected ? Colors.black : Colors.white60,
+                  fontSize: 12,
+                  fontWeight:
+                      selected ? FontWeight.w700 : FontWeight.normal,
+                ),
+              ),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+
+  // =========================================================================
+  // Section 1 – Revenue KPI card
   // =========================================================================
 
   Widget _buildRevenueSection() {
-    if (_errorRevenue != null &&
-        _dayReport == null &&
-        _weekReport == null &&
-        _monthReport == null) {
+    if (_errorRevenue != null && _salesReport == null) {
       return _errorCard('Revenue data unavailable', _errorRevenue!);
     }
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: _kpiCard(
-              label: 'Today',
-              value: _dayReport?.netSales,
-              sub: '${_dayReport?.totalOrders ?? 0} orders',
-              icon: Icons.today),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _kpiCard(
-              label: 'This Week',
-              value: _weekReport?.netSales,
-              sub: '${_weekReport?.totalOrders ?? 0} orders',
-              icon: Icons.date_range),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _kpiCard(
-              label: 'This Month',
-              value: _monthReport?.netSales,
-              sub: '${_monthReport?.totalOrders ?? 0} orders',
-              icon: Icons.calendar_month),
-        ),
-      ],
+    final icons = [Icons.today, Icons.date_range, Icons.calendar_month, Icons.calendar_today, Icons.all_inclusive];
+    return _kpiCard(
+      label: _periodLabels[_periodIndex],
+      value: _salesReport?.netSales,
+      sub: '${_salesReport?.totalOrders ?? 0} orders',
+      icon: icons[_periodIndex],
     );
   }
 
@@ -764,7 +895,8 @@ class _WooCommerceScreenState extends State<WooCommerceScreen>
         value != null ? 'AED ${NumberFormat('#,##0').format(value)}' : '—';
 
     return Container(
-      padding: const EdgeInsets.all(12),
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: const Color(0xFF161616),
         borderRadius: BorderRadius.circular(12),
@@ -982,7 +1114,7 @@ class _WooCommerceScreenState extends State<WooCommerceScreen>
       return _centeredError('Could not load top sellers', _errorTopSellers!);
     }
     if (_topSellers.isEmpty) {
-      return _centeredEmpty('No sales data available for this month.');
+      return _centeredEmpty('No sales data available for ${_periodLabels[_periodIndex].toLowerCase()}.');
     }
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 32),

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -25,9 +27,13 @@ class _QuotationsScreenState extends State<QuotationsScreen>
   String? _error;
   List<Map<String, dynamic>> _all = [];
   Set<int> _invoicedIds = {}; // quotation IDs that already have an invoice
+  Set<int> _unreadQuotationIds = {};
 
   final _searchCtrl = TextEditingController();
   String _query = '';
+
+  RealtimeChannel? _channel;
+  Timer?           _debounce;
 
   @override
   void initState() {
@@ -35,31 +41,75 @@ class _QuotationsScreenState extends State<QuotationsScreen>
     _tab = TabController(length: _tabs.length, vsync: this);
     _tab.addListener(() => setState(() {}));
     _load();
+    _setupRealtime();
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
+    final ch = _channel;
+    _channel = null;
+    if (ch != null) unawaited(_supabase.removeChannel(ch));
     _tab.dispose();
     _searchCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
+  void _setupRealtime() {
+    final id = DateTime.now().millisecondsSinceEpoch;
+    _channel = _supabase
+        .channel('quotations-screen-$id')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'quotations',
+          callback: (_) => _scheduleReload(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'invoices',
+          callback: (_) => _scheduleReload(),
+        )
+        .subscribe((status, error) {
+          debugPrint('QuotationsScreen realtime: $status ${error != null ? "error=$error" : ""}');
+        });
+  }
+
+  void _scheduleReload() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      _silentRefresh();
     });
+  }
+
+  Future<void> _load() async {
+    setState(() { _loading = true; _error = null; });
+    await _fetchAndApply(showError: true);
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _silentRefresh() async {
+    await _fetchAndApply(showError: false);
+  }
+
+  Future<void> _fetchAndApply({required bool showError}) async {
     try {
-      final quotRes = await _supabase
+      final quotFuture = _supabase
           .from('quotations')
           .select(
               'id, quote_no, customer_name, company_name, salesperson_name, net_total, quote_date, created_at, status, is_hamasat')
           .order('created_at', ascending: false);
-
-      final invRes = await _supabase
+      final invFuture = _supabase
           .from('invoices')
           .select('quotation_id')
           .not('quotation_id', 'is', null);
+      final unreadFuture = _fetchUnreadQuotationIds();
+
+      final quotRes = await quotFuture;
+      final invRes = await invFuture;
+      final unreadIds = await unreadFuture;
 
       if (!mounted) return;
 
@@ -70,18 +120,54 @@ class _QuotationsScreenState extends State<QuotationsScreen>
           .toSet();
 
       setState(() {
-        _all = (quotRes as List)
-            .map((e) => Map<String, dynamic>.from(e as Map))
-            .toList();
+        _all = (quotRes as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
         _invoicedIds = invoicedIds;
+        _unreadQuotationIds = unreadIds;
         _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+      if (showError) setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  Future<Set<int>> _fetchUnreadQuotationIds() async {
+    final uid = _supabase.auth.currentUser?.id;
+    if (uid == null) return {};
+    try {
+      final logsFuture = _supabase
+          .from('activity_logs')
+          .select('id, actor_id, meta')
+          .eq('action_type', 'quotation_status_change')
+          .order('created_at', ascending: false)
+          .limit(100);
+      final dismissalsFuture = _supabase
+          .from('notification_dismissals')
+          .select('entity_id')
+          .eq('user_id', uid)
+          .eq('category', 'doc_status_changes')
+          .eq('entity_type', 'activity_log');
+
+      final logs = await logsFuture as List;
+      final dismissals = await dismissalsFuture as List;
+      final dismissedIds =
+          dismissals.map((e) => (e as Map)['entity_id']?.toString() ?? '').toSet();
+
+      final unread = <int>{};
+      for (final item in logs) {
+        final log = Map<String, dynamic>.from(item as Map);
+        if ((log['actor_id'] ?? '').toString() == uid) continue;
+        final meta = log['meta'];
+        final m = meta is Map ? Map<String, dynamic>.from(meta) : <String, dynamic>{};
+        final ownerId = (m['owner_id'] ?? '').toString();
+        if (!widget.isAdmin && ownerId != uid) continue;
+        if (dismissedIds.contains((log['id'] ?? '').toString())) continue;
+        final docId = int.tryParse((m['doc_id'] ?? '').toString());
+        if (docId != null) unread.add(docId);
+      }
+      return unread;
+    } catch (_) {
+      return {};
     }
   }
 
@@ -134,7 +220,15 @@ class _QuotationsScreenState extends State<QuotationsScreen>
 
   Future<void> _openQuotation(Map<String, dynamic> q) async {
     final id = q['id'];
+    final qId = (q['id'] as num?)?.toInt() ?? 0;
     final isHamasat = q['is_hamasat'] == true;
+
+    // Optimistic: hide dot immediately
+    if (_unreadQuotationIds.contains(qId)) {
+      setState(() => _unreadQuotationIds.remove(qId));
+      unawaited(_dismissNotificationsForQuotation(qId));
+    }
+
     await Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => QuotationDetailsScreen(
         quotationId: id,
@@ -142,8 +236,32 @@ class _QuotationsScreenState extends State<QuotationsScreen>
         isAdmin: widget.isAdmin,
       ),
     ));
-    // Reload to refresh invoice badges
     _load();
+  }
+
+  Future<void> _dismissNotificationsForQuotation(int qId) async {
+    final uid = _supabase.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      final logs = await _supabase
+          .from('activity_logs')
+          .select('id, meta')
+          .eq('action_type', 'quotation_status_change') as List;
+      final matches = logs.where((log) {
+        final meta = log['meta'];
+        if (meta is! Map) return false;
+        return meta['doc_id']?.toString() == qId.toString();
+      }).toList();
+      if (matches.isEmpty) return;
+      await _supabase.from('notification_dismissals').upsert(
+        matches.map((log) => {
+          'user_id': uid,
+          'category': 'doc_status_changes',
+          'entity_type': 'activity_log',
+          'entity_id': log['id'].toString(),
+        }).toList(),
+      );
+    } catch (_) {}
   }
 
   @override
@@ -300,9 +418,11 @@ class _QuotationsScreenState extends State<QuotationsScreen>
           final q = items[i];
           final qId = (q['id'] as num?)?.toInt() ?? 0;
           final isInvoiced = _invoicedIds.contains(qId);
+          final isUnread = _unreadQuotationIds.contains(qId);
           return _QuotationCard(
             quotation: q,
             isInvoiced: isInvoiced,
+            isUnread: isUnread,
             onTap: () => _openQuotation(q),
             formatDate: _formatDate,
             formatMoney: _formatMoney,
@@ -320,6 +440,7 @@ class _QuotationsScreenState extends State<QuotationsScreen>
 class _QuotationCard extends StatelessWidget {
   final Map<String, dynamic> quotation;
   final bool isInvoiced;
+  final bool isUnread;
   final VoidCallback onTap;
   final String Function(dynamic) formatDate;
   final String Function(dynamic) formatMoney;
@@ -330,6 +451,7 @@ class _QuotationCard extends StatelessWidget {
     required this.onTap,
     required this.formatDate,
     required this.formatMoney,
+    this.isUnread = false,
   });
 
   String _t(dynamic v) => (v ?? '').toString().trim();
@@ -480,6 +602,23 @@ class _QuotationCard extends StatelessWidget {
                   ),
                 ),
               ),
+
+              // ── Unread indicator dot ─────────────────────────────────────
+              if (isUnread)
+                Positioned(
+                  top: 6,
+                  left: 6,
+                  child: Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      color: AppConstants.primaryColor,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: const Color(0xFF161616), width: 1.5),
+                    ),
+                  ),
+                ),
 
               // ── Quote number corner tag ───────────────────────────────────
               Positioned(

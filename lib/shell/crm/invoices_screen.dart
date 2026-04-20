@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:printing/printing.dart';
@@ -24,9 +26,13 @@ class _InvoicesScreenState extends State<InvoicesScreen>
   final _supabase = Supabase.instance.client;
   late final TabController _tabController;
 
-  List<Map<String, dynamic>> _all      = [];
+  List<Map<String, dynamic>> _all            = [];
+  Set<int>                   _unreadInvoiceIds = {};
   bool                       _loading  = true;
   String?                    _error;
+
+  RealtimeChannel? _channel;
+  Timer?           _debounce;
 
   static const _tabs = ['All', 'Unpaid', 'Partial', 'Paid'];
 
@@ -36,29 +42,112 @@ class _InvoicesScreenState extends State<InvoicesScreen>
     _tabController = TabController(length: _tabs.length, vsync: this);
     _tabController.addListener(() { if (mounted) setState(() {}); });
     _load();
+    _setupRealtime();
   }
 
   @override
   void dispose() {
+    _debounce?.cancel();
+    final ch = _channel;
+    _channel = null;
+    if (ch != null) unawaited(_supabase.removeChannel(ch));
     _tabController.dispose();
     super.dispose();
   }
 
+  void _setupRealtime() {
+    final id = DateTime.now().millisecondsSinceEpoch;
+    _channel = _supabase
+        .channel('invoices-screen-$id')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'invoices',
+          callback: (_) => _scheduleReload(),
+        )
+        .subscribe((status, error) {
+          debugPrint('InvoicesScreen realtime: $status ${error != null ? "error=$error" : ""}');
+        });
+  }
+
+  void _scheduleReload() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      _silentRefresh();
+    });
+  }
+
   Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
+    await _fetchAndApply(showError: true);
+    if (mounted) setState(() => _loading = false);
+  }
+
+  Future<void> _silentRefresh() async {
+    await _fetchAndApply(showError: false);
+  }
+
+  Future<void> _fetchAndApply({required bool showError}) async {
     try {
-      final data = await _supabase
-          .from('invoices')
-          .select()
-          .order('created_at', ascending: false);
+      final uid = _supabase.auth.currentUser?.id;
+      var query = _supabase.from('invoices').select();
+      if (!widget.isAdmin && uid != null) {
+        query = query.eq('created_by', uid);
+      }
+      final invoicesFuture = query.order('created_at', ascending: false);
+      final unreadFuture = _fetchUnreadInvoiceIds();
+      final data = await invoicesFuture;
+      final unreadIds = await unreadFuture;
       if (!mounted) return;
       setState(() {
-        _all     = List<Map<String, dynamic>>.from(data as List);
+        _all = List<Map<String, dynamic>>.from(data as List);
+        _unreadInvoiceIds = unreadIds;
         _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
-      setState(() { _error = e.toString(); _loading = false; });
+      if (showError) setState(() { _error = e.toString(); _loading = false; });
+    }
+  }
+
+  Future<Set<int>> _fetchUnreadInvoiceIds() async {
+    final uid = _supabase.auth.currentUser?.id;
+    if (uid == null) return {};
+    try {
+      final logsFuture = _supabase
+          .from('activity_logs')
+          .select('id, actor_id, meta')
+          .inFilter('action_type', ['invoice_status_change', 'invoice_created'])
+          .order('created_at', ascending: false)
+          .limit(100);
+      final dismissalsFuture = _supabase
+          .from('notification_dismissals')
+          .select('entity_id')
+          .eq('user_id', uid)
+          .eq('category', 'doc_status_changes')
+          .eq('entity_type', 'activity_log');
+
+      final logs = await logsFuture as List;
+      final dismissals = await dismissalsFuture as List;
+      final dismissedIds =
+          dismissals.map((e) => (e as Map)['entity_id']?.toString() ?? '').toSet();
+
+      final unread = <int>{};
+      for (final item in logs) {
+        final log = Map<String, dynamic>.from(item as Map);
+        if ((log['actor_id'] ?? '').toString() == uid) continue;
+        final meta = log['meta'];
+        final m = meta is Map ? Map<String, dynamic>.from(meta) : <String, dynamic>{};
+        final ownerId = (m['owner_id'] ?? '').toString();
+        if (!widget.isAdmin && ownerId != uid) continue;
+        if (dismissedIds.contains((log['id'] ?? '').toString())) continue;
+        final docId = int.tryParse((m['doc_id'] ?? '').toString());
+        if (docId != null) unread.add(docId);
+      }
+      return unread;
+    } catch (_) {
+      return {};
     }
   }
 
@@ -126,19 +215,23 @@ class _InvoicesScreenState extends State<InvoicesScreen>
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
         itemCount: items.length,
         separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (_, i) => _InvoiceCard(
-          invoice: items[i],
-          isAdmin: widget.isAdmin,
-          onTap: () async {
-            await Navigator.of(context).push(MaterialPageRoute(
-              builder: (_) => InvoiceDetailScreen(
-                invoiceId: (items[i]['id'] as num).toInt(),
-                isAdmin: widget.isAdmin,
-              ),
-            ));
-            _load();
-          },
-        ),
+        itemBuilder: (_, i) {
+          final invId = (items[i]['id'] as num?)?.toInt() ?? 0;
+          return _InvoiceCard(
+            invoice: items[i],
+            isAdmin: widget.isAdmin,
+            isUnread: _unreadInvoiceIds.contains(invId),
+            onTap: () async {
+              await Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => InvoiceDetailScreen(
+                  invoiceId: invId,
+                  isAdmin: widget.isAdmin,
+                ),
+              ));
+              _load();
+            },
+          );
+        },
       ),
     );
   }
@@ -150,10 +243,11 @@ class _InvoicesScreenState extends State<InvoicesScreen>
 
 class _InvoiceCard extends StatelessWidget {
   const _InvoiceCard(
-      {required this.invoice, required this.isAdmin, required this.onTap});
+      {required this.invoice, required this.isAdmin, required this.onTap, this.isUnread = false});
   final Map<String, dynamic> invoice;
   final bool                 isAdmin;
   final VoidCallback         onTap;
+  final bool                 isUnread;
 
   @override
   Widget build(BuildContext context) {
@@ -168,7 +262,9 @@ class _InvoiceCard extends StatelessWidget {
     final dueRaw    = invoice['due_date'] as String?;
     final dueDate   = dueRaw != null ? _fmtDate(dueRaw) : '';
 
-    return InkWell(
+    return Stack(
+      children: [
+      InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
@@ -238,6 +334,22 @@ class _InvoiceCard extends StatelessWidget {
           ],
         ),
       ),
+    ),
+      if (isUnread)
+        Positioned(
+          top: 6,
+          left: 6,
+          child: Container(
+            width: 9,
+            height: 9,
+            decoration: BoxDecoration(
+              color: AppConstants.primaryColor,
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFF1A1A1A), width: 1.5),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -306,10 +418,49 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
   bool                       _loading  = true;
   String?                    _error;
 
+  RealtimeChannel? _channel;
+  Timer?           _debounce;
+
   @override
   void initState() {
     super.initState();
     _load();
+    _setupRealtime();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    final ch = _channel;
+    _channel = null;
+    if (ch != null) unawaited(_supabase.removeChannel(ch));
+    super.dispose();
+  }
+
+  void _setupRealtime() {
+    _channel = _supabase
+        .channel('invoice-detail-${widget.invoiceId}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'invoices',
+          callback: (_) => _scheduleReload(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'invoice_payments',
+          callback: (_) => _scheduleReload(),
+        )
+        .subscribe();
+  }
+
+  void _scheduleReload() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      _load();
+    });
   }
 
   Future<void> _load() async {
@@ -351,6 +502,7 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
         _payments  = List<Map<String, dynamic>>.from(pays as List);
         _loading   = false;
       });
+      unawaited(_autoDismissStatusNotifications());
     } catch (e) {
       if (!mounted) return;
       setState(() { _error = e.toString(); _loading = false; });
@@ -395,11 +547,72 @@ class _InvoiceDetailScreenState extends State<InvoiceDetailScreen> {
     } else {
       newStatus = 'partial';
     }
+    final oldStatus = (_invoice?['status'] ?? '').toString();
     await _supabase.from('invoices').update({
       'amount_paid': newPaid,
       'status':      newStatus,
     }).eq('id', widget.invoiceId);
+    if (oldStatus != newStatus) {
+      unawaited(_logInvoiceStatusChange(
+        ownerId: (_invoice?['created_by'] ?? '').toString(),
+        docNumber: (_invoice?['invoice_number'] ?? '').toString(),
+        customerName: (_quotation?['customer_name'] ?? '').toString(),
+        oldStatus: oldStatus,
+        newStatus: newStatus,
+      ));
+    }
     await _load();
+  }
+
+  Future<void> _logInvoiceStatusChange({
+    required String ownerId,
+    required String docNumber,
+    required String customerName,
+    required String oldStatus,
+    required String newStatus,
+  }) async {
+    final uid = _supabase.auth.currentUser?.id;
+    if (uid == null || ownerId.isEmpty) return;
+    try {
+      await _supabase.from('activity_logs').insert({
+        'actor_id': uid,
+        'action_type': 'invoice_status_change',
+        'meta': {
+          'doc_id': widget.invoiceId,
+          'owner_id': ownerId,
+          'doc_number': docNumber,
+          'old_status': oldStatus,
+          'new_status': newStatus,
+          'customer_name': customerName,
+        },
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _autoDismissStatusNotifications() async {
+    final uid = _supabase.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      final response = await _supabase
+          .from('activity_logs')
+          .select('id, meta')
+          .inFilter('action_type', ['invoice_status_change', 'invoice_created']);
+      final docIdStr = widget.invoiceId.toString();
+      final logs = (response as List).where((log) {
+        final meta = log['meta'];
+        if (meta is! Map) return false;
+        return meta['doc_id']?.toString() == docIdStr;
+      }).toList();
+      if (logs.isEmpty) return;
+      await _supabase.from('notification_dismissals').upsert(
+        logs.map((log) => {
+          'user_id': uid,
+          'category': 'doc_status_changes',
+          'entity_type': 'activity_log',
+          'entity_id': log['id'].toString(),
+        }).toList(),
+      );
+    } catch (_) {}
   }
 
   // ── PDF ────────────────────────────────────────────────────────────────────

@@ -1891,6 +1891,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../../core/constants/app_constants.dart';
 import '../../features/auth/domain/entities/user_profile.dart';
 import '../../features/auth/presentation/providers/auth_provider.dart';
 import '../../login_screen.dart';
@@ -1927,6 +1928,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   List<Map<String, dynamic>> _dueTodayFollowUps = [];
   List<Map<String, dynamic>> _dueTomorrowFollowUps = [];
   List<Map<String, dynamic>> _assignmentLogs = [];
+  List<Map<String, dynamic>> _statusChangeLogs = [];
 
   Map<String, Map<String, dynamic>> _leadMap = {};
   Map<String, Map<String, dynamic>> _profileMap = {};
@@ -2024,6 +2026,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         _removeFollowUpFromAllSections(entityId);
       } else if (entityType == 'activity_log' && category == 'assignment_logs') {
         _removeAssignmentLogLocally(entityId);
+      } else if (entityType == 'activity_log' && category == 'doc_status_changes') {
+        _removeStatusChangeLogLocally(entityId);
       }
     });
 
@@ -2093,6 +2097,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       } else if (entityType == 'activity_log' && category == 'assignment_logs') {
         for (final id in cleanIds) {
           _removeAssignmentLogLocally(id);
+        }
+      } else if (entityType == 'activity_log' && category == 'doc_status_changes') {
+        for (final id in cleanIds) {
+          _removeStatusChangeLogLocally(id);
         }
       }
     });
@@ -2180,6 +2188,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           .order('created_at', ascending: false)
           .limit(30);
 
+      final statusLogsQuery = _supabase
+          .from('activity_logs')
+          .select()
+          .inFilter('action_type', ['quotation_status_change', 'invoice_status_change', 'invoice_created'])
+          .order('created_at', ascending: false)
+          .limit(50);
+
       if (_isSales && _currentUserId.isNotEmpty) {
         overdueQuery = overdueQuery.eq('assigned_to', _currentUserId);
         todayQuery = todayQuery.eq('assigned_to', _currentUserId);
@@ -2192,6 +2207,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       final tomorrowResponse =
       await tomorrowQuery.order('due_at', ascending: true);
       final assignmentLogsResponse = await assignmentLogsQuery;
+      final statusLogsResponse = await statusLogsQuery;
 
       final overdueRaw = (overdueResponse as List)
           .map((e) => Map<String, dynamic>.from(e as Map))
@@ -2203,6 +2219,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
       final assignmentLogsRaw = (assignmentLogsResponse as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+      final statusLogsRaw = (statusLogsResponse as List)
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
 
@@ -2281,8 +2300,22 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         ...assignmentLogs.map((e) => _text(e['lead_id'])),
       }..removeWhere((e) => e.isEmpty);
 
+      // Filter status change logs for current user
+      final statusChangeLogs = statusLogsRaw.where((item) {
+        if (_text(item['actor_id']) == _currentUserId) return false;
+        final meta = _payloadMap(item['meta']);
+        final ownerId = _text(meta['owner_id']);
+        if (!_isAdmin && ownerId != _currentUserId) return false;
+        return !_isDismissed(
+          category: 'doc_status_changes',
+          entityType: 'activity_log',
+          entityId: _text(item['id']),
+        );
+      }).toList();
+
       final actorIds = <String>{
         ...assignmentLogs.map((e) => _text(e['actor_id'])),
+        ...statusChangeLogs.map((e) => _text(e['actor_id'])),
       }..removeWhere((e) => e.isEmpty);
 
       final ownerIdsFromLogs = assignmentLogs
@@ -2341,6 +2374,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         _dueTodayFollowUps = dueToday;
         _dueTomorrowFollowUps = dueTomorrow;
         _assignmentLogs = assignmentLogs;
+        _statusChangeLogs = statusChangeLogs;
         _leadMap = leadMap;
         _profileMap = profileMap;
         _isLoading = false;
@@ -2687,21 +2721,59 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     final oldRow = _payloadMap(payload.oldRecord);
 
     final workingRow = newRow.isNotEmpty ? newRow : oldRow;
-    if (_text(workingRow['action_type']) != 'assign_lead') return;
+    final actionType = _text(workingRow['action_type']);
 
-    await _ensureAssignmentSupportData(workingRow);
+    if (actionType == 'assign_lead') {
+      await _ensureAssignmentSupportData(workingRow);
+      if (!mounted) return;
+      setState(() {
+        if (eventType == 'DELETE') {
+          _removeAssignmentLogLocally(_text(oldRow['id']));
+          return;
+        }
+        if (newRow.isEmpty) return;
+        _upsertAssignmentLogLocally(newRow);
+      });
+    } else if (actionType == 'quotation_status_change' ||
+        actionType == 'invoice_status_change' ||
+        actionType == 'invoice_created') {
+      // Ensure actor profile is loaded
+      final actorId = _text(workingRow['actor_id']);
+      if (actorId.isNotEmpty) await _ensureProfileLoaded(actorId);
+      if (!mounted) return;
+      setState(() {
+        if (eventType == 'DELETE') {
+          _removeStatusChangeLogLocally(_text(oldRow['id']));
+          return;
+        }
+        if (newRow.isEmpty) return;
+        _upsertStatusChangeLogLocally(newRow);
+      });
+    }
+  }
 
-    if (!mounted) return;
+  void _removeStatusChangeLogLocally(String id) {
+    _statusChangeLogs.removeWhere((e) => _text(e['id']) == id);
+  }
 
-    setState(() {
-      if (eventType == 'DELETE') {
-        _removeAssignmentLogLocally(_text(oldRow['id']));
-        return;
-      }
-
-      if (newRow.isEmpty) return;
-      _upsertAssignmentLogLocally(newRow);
-    });
+  void _upsertStatusChangeLogLocally(Map<String, dynamic> row) {
+    final id = _text(row['id']);
+    if (id.isEmpty) return;
+    final actorId = _text(row['actor_id']);
+    if (actorId == _currentUserId) return;
+    final meta = _payloadMap(row['meta']);
+    final ownerId = _text(meta['owner_id']);
+    if (!_isAdmin && ownerId != _currentUserId) return;
+    if (_isDismissed(
+      category: 'doc_status_changes',
+      entityType: 'activity_log',
+      entityId: id,
+    )) return;
+    _removeStatusChangeLogLocally(id);
+    _statusChangeLogs.insert(0, row);
+    if (_statusChangeLogs.length > 50) {
+      _statusChangeLogs = _statusChangeLogs.take(50).toList();
+    }
   }
 
   void _handleDismissalRealtime(dynamic payload) {
@@ -2739,6 +2811,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
         _removeFollowUpFromAllSections(entityId);
       } else if (entityType == 'activity_log' && category == 'assignment_logs') {
         _removeAssignmentLogLocally(entityId);
+      } else if (entityType == 'activity_log' && category == 'doc_status_changes') {
+        _removeStatusChangeLogLocally(entityId);
       }
     });
   }
@@ -2855,6 +2929,14 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(profileProvider, (prev, next) {
+      if (next.hasValue &&
+          (next.value?.id.isNotEmpty ?? false) &&
+          prev?.value?.id != next.value?.id) {
+        _loadAlerts();
+      }
+    });
+
     final isDesktop = MediaQuery.of(context).size.width >= 1000;
 
     return Scaffold(
@@ -2907,7 +2989,8 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
     final hasAnything = _overdueFollowUps.isNotEmpty ||
         _dueTodayFollowUps.isNotEmpty ||
         _dueTomorrowFollowUps.isNotEmpty ||
-        _assignmentLogs.isNotEmpty;
+        _assignmentLogs.isNotEmpty ||
+        _statusChangeLogs.isNotEmpty;
 
     if (!hasAnything) {
       return  _NotificationsStateCard(
@@ -3114,6 +3197,48 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               )
                   .toList(),
             ),
+          ),
+          const SizedBox(height: 14),
+          _NotificationSection(
+            title: 'Document Updates',
+            icon: Icons.description_outlined,
+            count: _statusChangeLogs.length,
+            trailing: _SectionActionButton(
+              enabled: _statusChangeLogs.isNotEmpty,
+              label: 'notifications_clear_all'.tr(),
+              onPressed: () => _clearSection(
+                category: 'doc_status_changes',
+                entityType: 'activity_log',
+                entityIds: _statusChangeLogs.map((e) => _text(e['id'])).toList(),
+              ),
+            ),
+            child: _statusChangeLogs.isEmpty
+                ? const _SectionEmptyText('No document status updates')
+                : Column(
+                    children: _statusChangeLogs.map((log) {
+                      final meta = _payloadMap(log['meta']);
+                      final actionType = _text(log['action_type']);
+                      final isInvoice = actionType == 'invoice_status_change' ||
+                          actionType == 'invoice_created';
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _DocStatusCard(
+                          isInvoice: isInvoice,
+                          docNumber: _text(meta['doc_number']),
+                          customerName: _text(meta['customer_name']),
+                          oldStatus: _text(meta['old_status']),
+                          newStatus: _text(meta['new_status']),
+                          actorLabel: _userLabel(_text(log['actor_id'])),
+                          createdAt: _formatDateTime(_parseDateTime(log['created_at'])),
+                          onDismiss: () => _dismissOne(
+                            category: 'doc_status_changes',
+                            entityType: 'activity_log',
+                            entityId: _text(log['id']),
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
           ),
           const SizedBox(height: 14),
           _NotificationSection(
@@ -3999,6 +4124,153 @@ class _NotificationsStateCard extends StatelessWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _DocStatusCard extends StatelessWidget {
+  final bool isInvoice;
+  final String docNumber;
+  final String customerName;
+  final String oldStatus;
+  final String newStatus;
+  final String actorLabel;
+  final String createdAt;
+  final VoidCallback onDismiss;
+
+  const _DocStatusCard({
+    required this.isInvoice,
+    required this.docNumber,
+    required this.customerName,
+    required this.oldStatus,
+    required this.newStatus,
+    required this.actorLabel,
+    required this.createdAt,
+    required this.onDismiss,
+  });
+
+  Color _statusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'approved': case 'paid': return Colors.green.shade600;
+      case 'cancelled': case 'unpaid': return Colors.red.shade600;
+      case 'partial': return Colors.orange.shade600;
+      case 'sent': return Colors.blue.shade600;
+      case 'draft': return Colors.grey.shade600;
+      default: return Colors.white54;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF141414),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFF2A220A)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: const Color(0xFF1E1A0E),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              isInvoice ? Icons.receipt_long_outlined : Icons.description_outlined,
+              size: 20,
+              color: AppConstants.primaryColor,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      docNumber.isNotEmpty ? docNumber : (isInvoice ? 'Invoice' : 'Quotation'),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 13.5,
+                      ),
+                    ),
+                    if (customerName.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          '• $customerName',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: Colors.white.withValues(alpha: 0.55),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 5),
+                if (oldStatus.isEmpty)
+                  _StatusPill(
+                    label: isInvoice ? 'Invoice Created' : 'Created',
+                    color: Colors.blue.shade600,
+                  )
+                else
+                  Row(
+                    children: [
+                      _StatusPill(label: oldStatus, color: _statusColor(oldStatus)),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 6),
+                        child: Icon(Icons.arrow_forward_rounded, size: 13, color: Colors.white38),
+                      ),
+                      _StatusPill(label: newStatus, color: _statusColor(newStatus)),
+                    ],
+                  ),
+                const SizedBox(height: 5),
+                Text(
+                  'By $actorLabel  •  $createdAt',
+                  style: const TextStyle(fontSize: 11.5, color: Colors.white38),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close_rounded, size: 18, color: Colors.white38),
+            onPressed: onDismiss,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatusPill extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _StatusPill({required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
+      ),
+      child: Text(
+        label.isEmpty ? '—' : label,
+        style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color),
       ),
     );
   }

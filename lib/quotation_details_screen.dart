@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:excel/excel.dart' hide Border;
@@ -13,6 +14,8 @@ import 'package:share_plus/share_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'core/constants/app_constants.dart';
+import 'services/commission_service.dart';
+import 'services/doc_number_service.dart';
 import 'hm_quotation_pdf_renderer.dart';
 import 'quotation_pdf_preview_screen.dart';
 import 'fc_quotation_pdf_renderer.dart';
@@ -57,6 +60,7 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
 
   Map<String, dynamic>? _quotation;
   List<Map<String, dynamic>> _items = [];
+  double? _commission;
 
   final Map<dynamic, Uint8List> _temporaryItemImages = {};
   final Map<dynamic, String> _temporaryItemImageNames = {};
@@ -70,6 +74,9 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
   // ── Status management ──────────────────────────────────────────────────────
   bool  _updatingStatus   = false;
 
+  RealtimeChannel? _channel;
+  Timer?           _debounce;
+
   @override
   void initState() {
     super.initState();
@@ -77,6 +84,42 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
     _fCQuotationPdfRenderer = FCQuotationPdfRenderer(supabase: _supabase);
     _hMQuotationPdfRenderer = HMQuotationPdfRenderer(supabase: _supabase);
     _loadQuotation();
+    _setupRealtime();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    final ch = _channel;
+    _channel = null;
+    if (ch != null) unawaited(_supabase.removeChannel(ch));
+    super.dispose();
+  }
+
+  void _setupRealtime() {
+    _channel = _supabase
+        .channel('quotation-detail-${widget.quotationId}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'quotations',
+          callback: (_) => _scheduleReload(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'invoices',
+          callback: (_) => _scheduleReload(),
+        )
+        .subscribe();
+  }
+
+  void _scheduleReload() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      _loadQuotation();
+    });
   }
 
   Future<void> _loadQuotation() async {
@@ -128,6 +171,12 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
       // Check whether an invoice already exists for this quotation
       _checkExistingInvoice();
 
+      // Load commission for admin
+      if (widget.isAdmin) _loadCommission(quotationMap, _items);
+
+      unawaited(_autoDismissStatusNotifications());
+
+
       debugPrint('Creator phone: $creatorPhone');
       debugPrint('Quotation: $_quotation');
     } catch (e) {
@@ -140,6 +189,29 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
   }
 
   // ── Invoice helpers ────────────────────────────────────────────────────────
+
+  Future<void> _loadCommission(
+      Map<String, dynamic> quotation, List<Map<String, dynamic>> items) async {
+    final creatorId = (quotation['created_by'] ?? '').toString();
+    if (creatorId.isEmpty) return;
+    try {
+      // Commission only counts on approved quotations
+      final quotationStatus = (quotation['status'] ?? '').toString();
+      if (quotationStatus != 'approved') return;
+
+      final rates = await CommissionService()
+          .getRatesForUser(_supabase, creatorId);
+      final lines = items.map((item) {
+        final priceKey = (item['price_key'] ?? '').toString();
+        final lineTotal =
+            double.tryParse(item['line_total']?.toString() ?? '0') ?? 0;
+        return (priceKey: priceKey, lineTotal: lineTotal);
+      }).toList();
+      final commission =
+          CommissionService().calculateTotalCommission(lines, rates);
+      if (mounted) setState(() => _commission = commission);
+    } catch (_) {}
+  }
 
   Future<void> _checkExistingInvoice() async {
     if (_quotation == null) return;
@@ -213,10 +285,20 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
 
     setState(() => _updatingStatus = true);
     try {
+      final oldStatus = (_quotation?['status'] ?? '').toString();
       await _supabase
           .from('quotations')
           .update({'status': newStatus})
           .eq('id', widget.quotationId);
+
+      unawaited(_logDocStatusChange(
+        actionType: 'quotation_status_change',
+        ownerId: (_quotation?['created_by'] ?? '').toString(),
+        docNumber: (_quotation?['quote_no'] ?? '').toString(),
+        customerName: (_quotation?['customer_name'] ?? '').toString(),
+        oldStatus: oldStatus,
+        newStatus: newStatus,
+      ));
 
       if (!mounted) return;
       setState(() {
@@ -250,27 +332,103 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
     }
   }
 
+  Future<void> _logDocStatusChange({
+    required String actionType,
+    required String ownerId,
+    required String docNumber,
+    required String customerName,
+    required String oldStatus,
+    required String newStatus,
+    dynamic docId,
+  }) async {
+    final uid = _supabase.auth.currentUser?.id;
+    if (uid == null || ownerId.isEmpty) return;
+    try {
+      await _supabase.from('activity_logs').insert({
+        'actor_id': uid,
+        'action_type': actionType,
+        'meta': {
+          'doc_id': docId ?? widget.quotationId,
+          'owner_id': ownerId,
+          'doc_number': docNumber,
+          'old_status': oldStatus,
+          'new_status': newStatus,
+          'customer_name': customerName,
+        },
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _autoDismissStatusNotifications() async {
+    final uid = _supabase.auth.currentUser?.id;
+    if (uid == null) return;
+    try {
+      final response = await _supabase
+          .from('activity_logs')
+          .select('id, meta')
+          .eq('action_type', 'quotation_status_change');
+      final docIdStr = widget.quotationId.toString();
+      final logs = (response as List).where((log) {
+        final meta = log['meta'];
+        if (meta is! Map) return false;
+        return meta['doc_id']?.toString() == docIdStr;
+      }).toList();
+      if (logs.isEmpty) return;
+      await _supabase.from('notification_dismissals').upsert(
+        logs.map((log) => {
+          'user_id': uid,
+          'category': 'doc_status_changes',
+          'entity_type': 'activity_log',
+          'entity_id': log['id'].toString(),
+        }).toList(),
+      );
+    } catch (_) {}
+  }
+
   Future<void> _createInvoice() async {
     final quot = _quotation;
     if (quot == null) return;
 
-    // Ask for due date
-    final today   = DateTime.now();
-    final dueDate = await showDatePicker(
+    // Ask for number of due days
+    final today = DateTime.now();
+    final daysController = TextEditingController(text: '15');
+    final confirmed = await showDialog<bool>(
       context: context,
-      initialDate: today.add(const Duration(days: 30)),
-      firstDate: today,
-      lastDate: today.add(const Duration(days: 365)),
-      helpText: 'Select Invoice Due Date',
+      builder: (ctx) => AlertDialog(
+        title: const Text('Payment Due Days'),
+        content: TextField(
+          controller: daysController,
+          keyboardType: TextInputType.number,
+          decoration: const InputDecoration(
+            labelText: 'Number of days',
+            suffixText: 'days',
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
     );
-    if (dueDate == null || !mounted) return;
+    if (confirmed != true || !mounted) return;
+    final days = int.tryParse(daysController.text.trim()) ?? 15;
+    final dueDate = today.add(Duration(days: days));
 
     setState(() => _creatingInvoice = true);
     try {
-      final invNumber =
-          'INV-${DateTime.now().millisecondsSinceEpoch}';
       final uid = _supabase.auth.currentUser?.id;
-
+      final quotOwnerId = (quot['created_by'] ?? '').toString();
+      final invOwner = quotOwnerId.isNotEmpty ? quotOwnerId : uid;
+      final invNumber = invOwner != null
+          ? await DocNumberService().nextInvoiceNumber(_supabase, invOwner)
+          : 'INV-${DateTime.now().millisecondsSinceEpoch}';
       final row = await _supabase.from('invoices').insert({
         'invoice_number': invNumber,
         'quotation_id':   widget.quotationId,
@@ -283,10 +441,21 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
         'total_amount':  quot['net_total'] ?? 0,
         'amount_paid':   0,
         'is_hamasat':    widget.isHamasat,
-        'created_by':    uid,
+        'created_by':    invOwner,
       }).select().single();
 
       final invoiceId = (row['id'] as num).toInt();
+
+      unawaited(_logDocStatusChange(
+        actionType: 'invoice_created',
+        ownerId: invOwner?.toString() ?? '',
+        docNumber: invNumber,
+        customerName: (quot['customer_name'] ?? '').toString(),
+        oldStatus: '',
+        newStatus: 'unpaid',
+        docId: invoiceId,
+      ));
+
       if (!mounted) return;
 
       setState(() {
@@ -1154,6 +1323,13 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
                   quote['net_total'],
                   bold: true,
                 ),
+                if (widget.isAdmin && _commission != null && _commission! > 0)
+                  _summaryRow(
+                    'Commission',
+                    _commission,
+                    bold: false,
+                    color: const Color(0xFF81C784),
+                  ),
               ],
             ),
           ),
@@ -1313,7 +1489,8 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
   }
 
   Widget _summaryRow(String label, dynamic value,
-      {bool bold = false, bool isDiscount = false}) {
+      {bool bold = false, bool isDiscount = false, Color? color}) {
+    final effectiveColor = color ?? (isDiscount ? Colors.green.shade400 : null);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -1323,7 +1500,7 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
               label,
               style: TextStyle(
                 fontWeight: bold ? FontWeight.w900 : FontWeight.w600,
-                color: isDiscount ? Colors.green.shade400 : null,
+                color: effectiveColor,
               ),
             ),
           ),
@@ -1333,11 +1510,7 @@ class _QuotationDetailsScreenState extends State<QuotationDetailsScreen> {
                 : _formatMoneyWithAed(value),
             style: TextStyle(
               fontWeight: bold ? FontWeight.w900 : FontWeight.w700,
-              color: isDiscount
-                  ? Colors.green.shade400
-                  : bold
-                      ? _accentColor
-                      : null,
+              color: effectiveColor ?? (bold ? _accentColor : null),
             ),
           ),
         ],

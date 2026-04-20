@@ -2416,6 +2416,8 @@ class _AgentPerformanceScreenState extends ConsumerState<AgentPerformanceScreen>
   bool _isLoading = true;
   String? _error;
   List<Map<String, dynamic>> _rows = [];
+  // email → total commission AED
+  Map<String, double> _commissionByEmail = {};
 
   UserProfile get _profile =>
       ref.read(profileProvider).value ??
@@ -2447,10 +2449,13 @@ class _AgentPerformanceScreenState extends ConsumerState<AgentPerformanceScreen>
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
 
+      final commissionByEmail = await _loadCommissions();
+
       if (!mounted) return;
 
       setState(() {
         _rows = rows;
+        _commissionByEmail = commissionByEmail;
         _isLoading = false;
       });
     } catch (e) {
@@ -2459,6 +2464,74 @@ class _AgentPerformanceScreenState extends ConsumerState<AgentPerformanceScreen>
         _error = e.toString();
         _isLoading = false;
       });
+    }
+  }
+
+  Future<Map<String, double>> _loadCommissions() async {
+    try {
+      // profileId → email mapping
+      final profilesRaw = await _supabase
+          .from('profiles')
+          .select('id, email')
+          .inFilter('role', ['admin', 'sales']);
+      final profileEmailById = <String, String>{
+        for (final p in profilesRaw as List)
+          (p['id'] ?? '').toString(): (p['email'] ?? '').toString(),
+      };
+
+      // all commission rates: profileId → {priceKey → rate%}
+      final ratesRaw = await _supabase
+          .from('commission_rates')
+          .select('profile_id, price_key, rate');
+      final allRates = <String, Map<String, double>>{};
+      for (final row in ratesRaw as List) {
+        final pid = (row['profile_id'] ?? '').toString();
+        final key = (row['price_key'] ?? '').toString();
+        final rate = double.tryParse(row['rate']?.toString() ?? '0') ?? 0;
+        allRates.putIfAbsent(pid, () => {})[key] = rate;
+      }
+
+      // approved quotation IDs only
+      final approvedRaw = await _supabase
+          .from('quotations')
+          .select('id, created_by')
+          .eq('status', 'approved');
+      final approvedIds = <dynamic>[];
+      final createdByById = <dynamic, String>{};
+      for (final q in approvedRaw as List) {
+        approvedIds.add(q['id']);
+        createdByById[q['id']] = (q['created_by'] ?? '').toString();
+      }
+
+      if (approvedIds.isEmpty) return {};
+
+      // items from approved quotations only
+      final itemsRaw = await _supabase
+          .from('quotation_items')
+          .select('price_key, line_total, quotation_id')
+          .inFilter('quotation_id', approvedIds);
+
+      final commissionByProfile = <String, double>{};
+      for (final item in itemsRaw as List) {
+        final quotationId = item['quotation_id'];
+        final createdBy = createdByById[quotationId] ?? '';
+        if (createdBy.isEmpty) continue;
+        final priceKey = (item['price_key'] ?? '').toString();
+        final lineTotal =
+            double.tryParse(item['line_total']?.toString() ?? '0') ?? 0;
+        final rate = (allRates[createdBy] ?? {})[priceKey] ?? 0;
+        commissionByProfile[createdBy] =
+            (commissionByProfile[createdBy] ?? 0) + lineTotal * rate / 100;
+      }
+
+      // translate profileId → email
+      return {
+        for (final entry in commissionByProfile.entries)
+          if (profileEmailById.containsKey(entry.key))
+            profileEmailById[entry.key]!: entry.value,
+      };
+    } catch (_) {
+      return {};
     }
   }
 
@@ -2607,6 +2680,7 @@ class _AgentPerformanceScreenState extends ConsumerState<AgentPerformanceScreen>
                       overdueFollowUps: _toInt(row['overdue_followups']),
                       doneFollowUps: _toInt(row['done_followups']),
                       missedFollowUps: _toInt(row['missed_followups']),
+                      commission: _commissionByEmail[_text(row['email'])],
                     ),
                   ),
                 ),
@@ -2633,6 +2707,7 @@ class _AgentPerformanceScreenState extends ConsumerState<AgentPerformanceScreen>
                     overdueFollowUps: _toInt(row['overdue_followups']),
                     doneFollowUps: _toInt(row['done_followups']),
                     missedFollowUps: _toInt(row['missed_followups']),
+                    commission: _commissionByEmail[_text(row['email'])],
                   ),
                 ),
               )
@@ -3207,6 +3282,13 @@ class _DesktopAgentHeaderRow extends StatelessWidget {
               style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
             ),
           ),
+          Expanded(
+            flex: 16,
+            child: Text(
+              'Commission',
+              style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white70),
+            ),
+          ),
         ],
       ),
     );
@@ -3227,6 +3309,7 @@ class _DesktopAgentRow extends StatelessWidget {
   final int overdueFollowUps;
   final int doneFollowUps;
   final int missedFollowUps;
+  final double? commission;
 
   const _DesktopAgentRow({
     required this.name,
@@ -3242,6 +3325,7 @@ class _DesktopAgentRow extends StatelessWidget {
     required this.overdueFollowUps,
     required this.doneFollowUps,
     required this.missedFollowUps,
+    this.commission,
   });
 
   @override
@@ -3307,6 +3391,18 @@ class _DesktopAgentRow extends StatelessWidget {
                 ('M', missedFollowUps),
               ],
             ),
+          ),
+          Expanded(
+            flex: 16,
+            child: commission != null && commission! > 0
+                ? Text(
+                    'AED ${commission!.toStringAsFixed(0)}',
+                    style: const TextStyle(
+                      color: Color(0xFF81C784),
+                      fontWeight: FontWeight.w800,
+                    ),
+                  )
+                : const Text('—', style: TextStyle(color: Colors.white38)),
           ),
         ],
       ),
@@ -3385,6 +3481,7 @@ class _MobileAgentCard extends StatelessWidget {
   final int overdueFollowUps;
   final int doneFollowUps;
   final int missedFollowUps;
+  final double? commission;
 
   const _MobileAgentCard({
     required this.name,
@@ -3400,6 +3497,7 @@ class _MobileAgentCard extends StatelessWidget {
     required this.overdueFollowUps,
     required this.doneFollowUps,
     required this.missedFollowUps,
+    this.commission,
   });
 
   Widget _metric(String label, int value) {
@@ -3506,6 +3604,33 @@ class _MobileAgentCard extends StatelessWidget {
               _metric(tr('status_missed'), missedFollowUps),
             ],
           ),
+          if (commission != null && commission! > 0) ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0D1F0D),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFF2E7D32)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.percent_rounded,
+                      size: 14, color: Color(0xFF81C784)),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Commission: AED ${commission!.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      color: Color(0xFF81C784),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );

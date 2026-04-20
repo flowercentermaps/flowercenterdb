@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -83,7 +83,9 @@ class _UpdateCheckerState extends State<UpdateChecker>
       final info = await PackageInfo.fromPlatform();
       _currentVersion = info.version;
 
-      final platform = Platform.isAndroid ? 'android' : 'windows';
+      final platform = defaultTargetPlatform == TargetPlatform.android
+          ? 'android'
+          : 'windows';
       debugPrint('[UpdateChecker] platform=$platform currentVersion=$_currentVersion');
 
       final response = await Supabase.instance.client

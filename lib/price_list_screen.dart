@@ -15,6 +15,9 @@ import 'login_screen.dart';
 import 'quotation_details_screen.dart';
 import 'quotation_list_screen.dart';
 import 'scanner.dart';
+import 'services/doc_number_service.dart';
+import 'services/price_tier_service.dart';
+import 'services/commission_service.dart';
 
 class _PriceOptionMeta {
   final String key;
@@ -48,11 +51,13 @@ enum _ViewMode { list, grid }
 class _SelectedQuoteItem {
   final int itemId;
   final String productName;
-  final String priceKey;
-  final String priceLabel;
-  final double unitPrice;
+  final String priceKey;      // detected tier key (updates when price edited)
+  final String priceLabel;    // detected tier label
+  final double unitPrice;     // actual price (may be custom)
   final int quantity;
   final Map<String, dynamic> item;
+  final String basePriceKey;  // original selected tier (floor)
+  final double basePrice;     // floor price
 
   const _SelectedQuoteItem({
     required this.itemId,
@@ -62,6 +67,8 @@ class _SelectedQuoteItem {
     required this.unitPrice,
     required this.quantity,
     required this.item,
+    required this.basePriceKey,
+    required this.basePrice,
   });
 
   _SelectedQuoteItem copyWith({
@@ -71,6 +78,8 @@ class _SelectedQuoteItem {
     double? unitPrice,
     int? quantity,
     Map<String, dynamic>? item,
+    String? basePriceKey,
+    double? basePrice,
   }) {
     return _SelectedQuoteItem(
       itemId: itemId,
@@ -80,10 +89,13 @@ class _SelectedQuoteItem {
       unitPrice: unitPrice ?? this.unitPrice,
       quantity: quantity ?? this.quantity,
       item: item ?? this.item,
+      basePriceKey: basePriceKey ?? this.basePriceKey,
+      basePrice: basePrice ?? this.basePrice,
     );
   }
 
   double get lineTotal => unitPrice * quantity;
+  bool get isCustomPrice => unitPrice != basePrice;
 }
 
 class _QuotationDraft {
@@ -214,6 +226,7 @@ class _PriceListScreenState extends ConsumerState<PriceListScreen> {
     await Future.wait([
       _loadItems(),
       _loadPricePermissions(),
+      PriceTierService().loadSettings(_supabase),
     ]);
   }
 
@@ -497,7 +510,7 @@ class _PriceListScreenState extends ConsumerState<PriceListScreen> {
   }
 
   double? _priceValueForKey(Map<String, dynamic> item, String priceKey) {
-    return _toDouble(item[priceKey]);
+    return PriceTierService().getPriceForKey(item, priceKey);
   }
 
   bool _isPriceAllowedForItem(Map<String, dynamic> item, String priceKey) {
@@ -542,6 +555,8 @@ class _PriceListScreenState extends ConsumerState<PriceListScreen> {
         unitPrice: priceValue,
         quantity: current?.quantity ?? 1,
         item: item,
+        basePriceKey: priceKey,
+        basePrice: priceValue,
       );
     });
   }
@@ -605,6 +620,20 @@ class _PriceListScreenState extends ConsumerState<PriceListScreen> {
     // Guard against double-submission
     if (_isSavingQuotation) return;
 
+    // Check for blocked prices
+    for (final item in _selectedQuoteItems.values) {
+      final result = PriceTierService().detectTier(
+        item.unitPrice, item.item, _pricePermissions, item.basePriceKey);
+      if (result.isBlocked) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(
+            '${item.productName}: price ${item.unitPrice} is in a disabled tier zone.')),
+        );
+        return;
+      }
+    }
+
     final user = _supabase.auth.currentUser;
     if (user == null) {
       if (!mounted) return;
@@ -625,35 +654,38 @@ class _PriceListScreenState extends ConsumerState<PriceListScreen> {
     final vatAmount = afterDiscount * (draft.vatPercent / 100);
     final netTotal = afterDiscount + vatAmount;
 
-    final quoteNo = 'QT-${DateTime.now().microsecondsSinceEpoch}';
-
-    final quotationPayload = {
-      'quote_no': quoteNo,
-      'quote_date': DateTime.now().toIso8601String().split('T').first,
-      'customer_name': _safeTextOrNull(draft.customerName),
-      'company_name': _safeTextOrNull(draft.companyName),
-      'customer_trn': _safeTextOrNull(draft.customerTrn),
-      'customer_phone': _safeTextOrNull(draft.customerPhone),
-      'salesperson_name': _safeTextOrNull(draft.salespersonName),
-      'salesperson_contact': _safeTextOrNull(draft.salespersonContact),
-      'salesperson_phone': _safeTextOrNull(draft.salespersonPhone),
-      'notes': _safeTextOrNull(draft.notes),
-      'status': 'draft',
-      'subtotal': subtotal,
-      'delivery_fee': draft.deliveryFee,
-      'installation_fee': draft.installationFee,
-      'additional_details_fee': draft.additionalDetailsFee,
-      'discount_amount': draft.discountAmount,
-      'taxable_total': taxableTotal,
-      'vat_percent': draft.vatPercent,
-      'vat_amount': vatAmount,
-      'net_total': netTotal,
-      'created_by': user.id,
-      'updated_by': user.id,
-      'is_hamasat': isHamasat,
-    };
-
     try {
+      final quoteNo = await DocNumberService().nextQuoteNumber(
+        _supabase,
+        _profile.id,
+      );
+
+      final quotationPayload = {
+        'quote_no': quoteNo,
+        'quote_date': DateTime.now().toIso8601String().split('T').first,
+        'customer_name': _safeTextOrNull(draft.customerName),
+        'company_name': _safeTextOrNull(draft.companyName),
+        'customer_trn': _safeTextOrNull(draft.customerTrn),
+        'customer_phone': _safeTextOrNull(draft.customerPhone),
+        'salesperson_name': _safeTextOrNull(draft.salespersonName),
+        'salesperson_contact': _safeTextOrNull(draft.salespersonContact),
+        'salesperson_phone': _safeTextOrNull(draft.salespersonPhone),
+        'notes': _safeTextOrNull(draft.notes),
+        'status': 'draft',
+        'subtotal': subtotal,
+        'delivery_fee': draft.deliveryFee,
+        'installation_fee': draft.installationFee,
+        'additional_details_fee': draft.additionalDetailsFee,
+        'discount_amount': draft.discountAmount,
+        'taxable_total': taxableTotal,
+        'vat_percent': draft.vatPercent,
+        'vat_amount': vatAmount,
+        'net_total': netTotal,
+        'created_by': user.id,
+        'updated_by': user.id,
+        'is_hamasat': isHamasat,
+      };
+
       final insertedQuotation = await _supabase
           .from('quotations')
           .insert(quotationPayload)
@@ -869,14 +901,21 @@ class _PriceListScreenState extends ConsumerState<PriceListScreen> {
                                         ),
                                       ),
                                       const SizedBox(height: 6),
-                                      Text(
-                                        '${selected.priceLabel} • ${_formatPrice(selected.unitPrice)}',
-                                        style: const TextStyle(
-                                          color: AppConstants.primaryColor,
-                                          fontWeight: FontWeight.w700,
-                                        ),
+                                      _CartPriceField(
+                                        selected: selected,
+                                        permissions: _pricePermissions,
+                                        onPriceChanged: (newPrice, priceKey, priceLabel) {
+                                          setState(() {
+                                            _selectedQuoteItems[selected.itemId] =
+                                                selected.copyWith(
+                                              unitPrice: newPrice,
+                                              priceKey: priceKey,
+                                              priceLabel: priceLabel,
+                                            );
+                                          });
+                                        },
                                       ),
-                                      const SizedBox(height: 6),
+                                      const SizedBox(height: 4),
                                       Text(
                                         'Line total: ${_formatPrice(selected.lineTotal)}',
                                       ),
@@ -2478,6 +2517,146 @@ class _CompactListTile extends StatelessWidget {
     );
   }
 }
+// ---------------------------------------------------------------------------
+// Cart price editing widget
+// ---------------------------------------------------------------------------
+
+class _CartPriceField extends StatefulWidget {
+  final _SelectedQuoteItem selected;
+  final Map<String, bool> permissions;
+  final void Function(double price, String priceKey, String priceLabel) onPriceChanged;
+
+  const _CartPriceField({
+    required this.selected,
+    required this.permissions,
+    required this.onPriceChanged,
+  });
+
+  @override
+  State<_CartPriceField> createState() => _CartPriceFieldState();
+}
+
+class _CartPriceFieldState extends State<_CartPriceField> {
+  late TextEditingController _ctrl;
+  bool _isBlocked = false;
+  String _detectedLabel = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = TextEditingController(
+        text: widget.selected.unitPrice.toStringAsFixed(2));
+    _detectedLabel = widget.selected.priceLabel;
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _onChanged(String val) {
+    final typed = double.tryParse(val);
+    if (typed == null) return;
+
+    final floor = widget.selected.basePrice;
+    if (typed < floor) {
+      setState(() => _isBlocked = true);
+      return;
+    }
+
+    final result = PriceTierService().detectTier(
+      typed,
+      widget.selected.item,
+      widget.permissions,
+      widget.selected.basePriceKey,
+    );
+
+    setState(() {
+      _isBlocked = result.isBlocked;
+      _detectedLabel = result.priceLabel;
+    });
+
+    if (!result.isBlocked) {
+      widget.onPriceChanged(typed, result.priceKey, result.priceLabel);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: _isBlocked
+                ? const Color(0xFF7F1D1D)
+                : AppConstants.primaryColor.withOpacity(0.15),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: _isBlocked
+                  ? const Color(0xFFEF4444)
+                  : AppConstants.primaryColor.withOpacity(0.4),
+            ),
+          ),
+          child: Text(
+            _detectedLabel,
+            style: TextStyle(
+              color: _isBlocked ? const Color(0xFFEF4444) : AppConstants.primaryColor,
+              fontWeight: FontWeight.w700,
+              fontSize: 11,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 90,
+          child: TextField(
+            controller: _ctrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            decoration: InputDecoration(
+              isDense: true,
+              contentPadding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+                borderSide: BorderSide(
+                  color: _isBlocked
+                      ? const Color(0xFFEF4444)
+                      : const Color(0xFF333333),
+                ),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+                borderSide: BorderSide(
+                  color: _isBlocked
+                      ? const Color(0xFFEF4444)
+                      : AppConstants.primaryColor,
+                ),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(6),
+                borderSide: BorderSide(
+                  color: _isBlocked
+                      ? const Color(0xFFEF4444)
+                      : const Color(0xFF333333),
+                ),
+              ),
+            ),
+            onChanged: _onChanged,
+          ),
+        ),
+        if (_isBlocked)
+          const Padding(
+            padding: EdgeInsets.only(left: 6),
+            child: Icon(Icons.block, color: Color(0xFFEF4444), size: 14),
+          ),
+      ],
+    );
+  }
+}
+
 class _CountBadge extends StatelessWidget {
   final String label;
   final String value;
@@ -3219,7 +3398,7 @@ class _PriceChipWrap extends StatelessWidget {
     }
 
     final chips = priceOptions.map((option) {
-      final priceValue = _toDouble(item[option.key]);
+      final priceValue = PriceTierService().getPriceForKey(item, option.key);
       final hasValue = priceValue != null;
       final isAllowed = (pricePermissions[option.key] ?? true) && hasValue;
       final isSelected = selectedPriceKey == option.key;

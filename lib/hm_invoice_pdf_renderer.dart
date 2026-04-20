@@ -190,12 +190,13 @@ class HmInvoicePdfRenderer {
                         font: _fontBold, fontSize: 7.5, color: _brandPurple)),
                 pw.SizedBox(height: 4),
                 if (customerName.isNotEmpty)
-                  pw.Text(customerName,
-                      style: pw.TextStyle(font: _fontBold, fontSize: 9.5)),
+                  pw.Text(_shape(customerName),
+                      textDirection: _dir(customerName),
+                      style: pw.TextStyle(font: _boldFont(customerName), fontSize: 9.5)),
                 if (companyName.isNotEmpty)
-                  pw.Text(companyName,
-                      style:
-                          pw.TextStyle(font: _fontRegular, fontSize: 8.5)),
+                  pw.Text(_shape(companyName),
+                      textDirection: _dir(companyName),
+                      style: pw.TextStyle(font: _regFont(companyName), fontSize: 8.5)),
                 if (customerPhone.isNotEmpty)
                   pw.Text(customerPhone,
                       style:

@@ -13,6 +13,8 @@ import '../../login_screen.dart';
 import '../../price_list_screen.dart';
 import '../../sync_screen.dart';
 import '../../user_role_management_screen.dart';
+import 'commission_rates_screen.dart';
+import 'reports_screen.dart';
 import 'agent_performance_screen.dart';
 import 'follow_up_screen.dart';
 import 'home_dashboard_screen.dart';
@@ -45,6 +47,8 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
 
   int _notificationsBadgeCount = 0;
   int _followUpBadgeCount = 0;
+  int _quotationsBadgeCount = 0;
+  int _invoicesBadgeCount = 0;
 
   String get _role => _profile.role.trim().toLowerCase();
 
@@ -117,6 +121,8 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
       final results = await Future.wait<int>([
         _loadNotificationsBadgeCount(),
         _loadFollowUpBadgeCount(),
+        _loadDocStatusBadgeCount(['quotation_status_change']),
+        _loadDocStatusBadgeCount(['invoice_status_change', 'invoice_created']),
       ]);
 
       if (!mounted) return;
@@ -124,13 +130,45 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
       setState(() {
         _notificationsBadgeCount = results[0];
         _followUpBadgeCount = results[1];
+        _quotationsBadgeCount = results[2];
+        _invoicesBadgeCount = results[3];
       });
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _notificationsBadgeCount = 0;
         _followUpBadgeCount = 0;
+        _quotationsBadgeCount = 0;
+        _invoicesBadgeCount = 0;
       });
+    }
+  }
+
+  Future<int> _loadDocStatusBadgeCount(List<String> actionTypes) async {
+    try {
+      final dismissals = await _loadDismissalKeys();
+      final response = await _supabase
+          .from('activity_logs')
+          .select('id, actor_id, meta')
+          .inFilter('action_type', actionTypes)
+          .order('created_at', ascending: false)
+          .limit(50);
+      return (response as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .where((item) {
+        if (_text(item['actor_id']) == _currentUserId) return false;
+        final meta = _payloadMap(item['meta']);
+        final ownerId = _text(meta['owner_id']);
+        if (!_isAdmin && ownerId != _currentUserId) return false;
+        return !_isDismissedKey(
+          dismissals,
+          category: 'doc_status_changes',
+          entityType: 'activity_log',
+          entityId: _text(item['id']),
+        );
+      }).length;
+    } catch (_) {
+      return 0;
     }
   }
 
@@ -182,6 +220,13 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
         .eq('action_type', 'assign_lead')
         .order('created_at', ascending: false)
         .limit(30);
+
+    final docStatusLogsResponse = await _supabase
+        .from('activity_logs')
+        .select('id, actor_id, action_type, meta')
+        .inFilter('action_type', ['quotation_status_change', 'invoice_status_change', 'invoice_created'])
+        .order('created_at', ascending: false)
+        .limit(50);
 
     final overdue = (overdueResponse as List)
         .map((e) => Map<String, dynamic>.from(e as Map))
@@ -251,7 +296,22 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
           );
     }).length;
 
-    return overdue + dueToday + dueTomorrow + assignmentLogs;
+    final docStatusLogs = (docStatusLogsResponse as List)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .where((item) {
+      if (_text(item['actor_id']) == _currentUserId) return false;
+      final meta = _payloadMap(item['meta']);
+      final ownerId = _text(meta['owner_id']);
+      if (!_isAdmin && ownerId != _currentUserId) return false;
+      return !_isDismissedKey(
+        dismissals,
+        category: 'doc_status_changes',
+        entityType: 'activity_log',
+        entityId: _text(item['id']),
+      );
+    }).length;
+
+    return overdue + dueToday + dueTomorrow + assignmentLogs + docStatusLogs;
   }
 
   Future<int> _loadFollowUpBadgeCount() async {
@@ -332,6 +392,10 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
         return _notificationsBadgeCount;
       case 'follow_up':
         return _followUpBadgeCount;
+      case 'quotations':
+        return _quotationsBadgeCount;
+      case 'invoices':
+        return _invoicesBadgeCount;
       default:
         return 0;
     }
@@ -345,6 +409,7 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
         icon: Icons.dashboard_outlined,
         badgeCount: _badgeCountFor('home'),
         builder: () => const HomeDashboardScreen(showOwnHeader: false),
+        group: 'main',
       ),
       _CrmNavItem(
         keyName: 'notifications',
@@ -352,6 +417,7 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
         icon: Icons.notifications_active_outlined,
         badgeCount: _badgeCountFor('notifications'),
         builder: () => const NotificationsScreen(showOwnHeader: false),
+        group: 'main',
       ),
       _CrmNavItem(
         keyName: 'leads',
@@ -359,6 +425,7 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
         icon: Icons.people_alt_outlined,
         badgeCount: _badgeCountFor('leads'),
         builder: () => const LeadsScreen(),
+        group: 'main',
       ),
       _CrmNavItem(
         keyName: 'follow_up',
@@ -368,11 +435,7 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
         builder: () => const FollowUpScreen(
           showOwnHeader: false,
         ),
-        // builder: () => FollowUpScreen(
-        //   profile: widget.profile,
-        //   onLogout: widget.onLogout,
-        //   showOwnHeader: false,
-        // ),
+        group: 'main',
       ),
       _CrmNavItem(
         keyName: 'products',
@@ -380,6 +443,7 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
         icon: Icons.inventory_2_outlined,
         badgeCount: _badgeCountFor('products'),
         builder: () => const PriceListScreen(),
+        group: 'sales',
       ),
       // _CrmNavItem(
       //   keyName: 'products',
@@ -399,8 +463,9 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
         keyName: 'quotations',
         label: 'Quotations',
         icon: Icons.description_outlined,
-        badgeCount: 0,
+        badgeCount: _badgeCountFor('quotations'),
         builder: () => QuotationsScreen(isAdmin: _isAdmin),
+        group: 'sales',
       ),
     );
 
@@ -412,6 +477,7 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
         icon: Icons.shopping_cart_outlined,
         badgeCount: 0,
         builder: () => PurchaseRequestScreen(isAdmin: _isAdmin),
+        group: 'sales',
       ),
     );
 
@@ -422,8 +488,9 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
           keyName: 'invoices',
           label: 'Invoices',
           icon: Icons.receipt_long_outlined,
-          badgeCount: 0,
+          badgeCount: _badgeCountFor('invoices'),
           builder: () => InvoicesScreen(isAdmin: _isAdmin || _isAccountant),
+          group: 'sales',
         ),
       );
     }
@@ -431,11 +498,20 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
     if (_isAdmin) {
       items.addAll([
         _CrmNavItem(
+          keyName: 'reports',
+          label: 'Reports',
+          icon: Icons.bar_chart_rounded,
+          badgeCount: 0,
+          builder: () => const ReportsScreen(),
+          group: 'analytics',
+        ),
+        _CrmNavItem(
           keyName: 'sales_analytics',
           label: 'Sales Analytics',
           icon: Icons.analytics_outlined,
           badgeCount: 0,
           builder: () => const SalesAnalyticsScreen(),
+          group: 'analytics',
         ),
         _CrmNavItem(
           keyName: 'woocommerce',
@@ -443,6 +519,7 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
           icon: Icons.language_outlined,
           badgeCount: 0,
           builder: () => const WooCommerceScreen(),
+          group: 'analytics',
         ),
         _CrmNavItem(
           keyName: 'statistics',
@@ -450,10 +527,9 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
           icon: Icons.bar_chart_rounded,
           badgeCount: _badgeCountFor('statistics'),
           builder: () => StatisticsScreen(
-            // profile: widget.profile,
-            // onLogout: widget.onLogout,
             showOwnHeader: false,
           ),
+          group: 'analytics',
         ),
       ]);
 
@@ -480,19 +556,25 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
           icon: Icons.groups_2_outlined,
           badgeCount: _badgeCountFor('agent_performance'),
           builder: () => AgentPerformanceScreen(
-            // profile: widget.profile,
-            // onLogout: widget.onLogout,
             showOwnHeader: false,
           ),
+          group: 'analytics',
         ),
         _CrmNavItem(
           keyName: 'user_roles',
           label: 'nav_user_roles'.tr(),
           icon: Icons.admin_panel_settings_outlined,
           badgeCount: _badgeCountFor('user_roles'),
-          builder: () => UserRoleManagementScreen(
-            // currentUserId: (widget.profile['id'] ?? '').toString(),
-          ),
+          builder: () => UserRoleManagementScreen(),
+          group: 'admin',
+        ),
+        _CrmNavItem(
+          keyName: 'commission_rates',
+          label: 'Commission',
+          icon: Icons.percent_rounded,
+          badgeCount: 0,
+          builder: () => const CommissionRatesScreen(),
+          group: 'admin',
         ),
         _CrmNavItem(
           keyName: 'sync',
@@ -500,6 +582,7 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
           icon: Icons.sync_rounded,
           badgeCount: 0,
           builder: () => const SyncScreen(showOwnHeader: false),
+          group: 'admin',
         ),
       ]);
     }
@@ -603,6 +686,15 @@ class _CrmShellScreenState extends ConsumerState<CrmShellScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Refresh badge counts once the profile finishes loading (fixes timing for non-admin roles)
+    ref.listen(profileProvider, (prev, next) {
+      if (next.hasValue &&
+          (next.value?.id.isNotEmpty ?? false) &&
+          prev?.value?.id != next.value?.id) {
+        _refreshBadgeCounts();
+      }
+    });
+
     final isWide = MediaQuery.of(context).size.width >= 1024;
     final items = _items;
 
@@ -721,6 +813,7 @@ class _CrmNavItem {
   final IconData icon;
   final int badgeCount;
   final Widget Function() builder;
+  final String group; // 'main' | 'sales' | 'analytics' | 'admin'
 
   const _CrmNavItem({
     required this.keyName,
@@ -728,6 +821,7 @@ class _CrmNavItem {
     required this.icon,
     required this.badgeCount,
     required this.builder,
+    this.group = 'main',
   });
 }
 
@@ -811,25 +905,38 @@ class _CrmSidebar extends StatelessWidget {
   //   return (profile['role'] ?? '').toString().trim().toUpperCase();
   // }
 
-  bool _isPrimaryKey(String key) {
-    return key == 'home' ||
-        key == 'notifications' ||
-        key == 'leads' ||
-        key == 'follow_up' ||
-        key == 'products';
-  }
+  static const _groupOrder = ['main', 'sales', 'analytics', 'admin'];
+  static const _groupLabels = {
+    'main': 'Main',
+    'sales': 'Sales',
+    'analytics': 'Analytics',
+    'admin': 'Admin',
+  };
 
   @override
   Widget build(BuildContext context) {
-    final primaryEntries = <MapEntry<int, _CrmNavItem>>[];
-    final secondaryEntries = <MapEntry<int, _CrmNavItem>>[];
-
+    final grouped = <String, List<MapEntry<int, _CrmNavItem>>>{};
     for (var i = 0; i < items.length; i++) {
-      final entry = MapEntry(i, items[i]);
-      if (_isPrimaryKey(items[i].keyName)) {
-        primaryEntries.add(entry);
-      } else {
-        secondaryEntries.add(entry);
+      final g = items[i].group;
+      grouped.putIfAbsent(g, () => []).add(MapEntry(i, items[i]));
+    }
+
+    final sectionWidgets = <Widget>[];
+    for (final groupKey in _groupOrder) {
+      final entries = grouped[groupKey];
+      if (entries == null || entries.isEmpty) continue;
+      if (sectionWidgets.isNotEmpty) sectionWidgets.add(const SizedBox(height: 10));
+      sectionWidgets.add(_SidebarSectionLabel(label: _groupLabels[groupKey] ?? groupKey));
+      sectionWidgets.add(const SizedBox(height: 6));
+      for (final entry in entries) {
+        sectionWidgets.add(Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: _SidebarNavTile(
+            item: entry.value,
+            selected: entry.key == selectedIndex,
+            onTap: () => onSelect(entry.key),
+          ),
+        ));
       }
     }
 
@@ -847,7 +954,7 @@ class _CrmSidebar extends StatelessWidget {
                   height: 34,
                 ),
                 const SizedBox(width: 10),
-                 Expanded(
+                Expanded(
                   child: Text(
                     'app_name'.tr(),
                     maxLines: 1,
@@ -859,74 +966,16 @@ class _CrmSidebar extends StatelessWidget {
                     ),
                   ),
                 ),
-
               ],
             ),
           ),
           LanguageSwitcher(),
           const Divider(height: 1, thickness: 1, color: Color(0xFF2A220A)),
-          // Padding(
-          //   padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
-          //   child: Column(
-          //     crossAxisAlignment: CrossAxisAlignment.start,
-          //     children: [
-          //       Text(
-          //         _displayName(),
-          //         maxLines: 1,
-          //         overflow: TextOverflow.ellipsis,
-          //         style: const TextStyle(
-          //           fontWeight: FontWeight.w700,
-          //           fontSize: 14,
-          //         ),
-          //       ),
-          //       const SizedBox(height: 4),
-          //       Text(
-          //         _role(),
-          //         style: const TextStyle(
-          //           color: AppConstants.primaryColor,
-          //           fontWeight: FontWeight.w800,
-          //           fontSize: 11.5,
-          //           letterSpacing: 0.4,
-          //         ),
-          //       ),
-          //     ],
-          //   ),
-          // ),
           const Divider(height: 1, thickness: 1, color: Color(0xFF2A220A)),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
-              children: [
-                if (primaryEntries.isNotEmpty) ...[
-                  _SidebarSectionLabel(label: 'nav_main'.tr()),
-                  const SizedBox(height: 6),
-                  ...primaryEntries.map(
-                        (entry) => Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: _SidebarNavTile(
-                        item: entry.value,
-                        selected: entry.key == selectedIndex,
-                        onTap: () => onSelect(entry.key),
-                      ),
-                    ),
-                  ),
-                ],
-                if (secondaryEntries.isNotEmpty) ...[
-                  const SizedBox(height: 10),
-                   _SidebarSectionLabel(label: 'nav_more'.tr()),
-                  const SizedBox(height: 6),
-                  ...secondaryEntries.map(
-                        (entry) => Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: _SidebarNavTile(
-                        item: entry.value,
-                        selected: entry.key == selectedIndex,
-                        onTap: () => onSelect(entry.key),
-                      ),
-                    ),
-                  ),
-                ],
-              ],
+              children: sectionWidgets,
             ),
           ),
         ],
