@@ -2587,6 +2587,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
   PushSenderService(_supabase);
 
   final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
 
   RealtimeChannel? _realtimeChannel;
   Timer? _debounce;
@@ -2606,6 +2607,13 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
   bool _importantOnly = false;
   LeadScope _scope = LeadScope.myLeads;
   _LeadSort _sortBy = _LeadSort.newestFirst;
+
+  // ── Pagination ────────────────────────────────────────────────────────────
+  static const int _pageSize = 200;
+  int _currentOffset = 0;
+  bool _hasMore = false;
+  bool _isLoadingMore = false;
+  List<Map<String, dynamic>> _searchResults = [];
 
   static const List<String> _statuses = <String>[
     'new',
@@ -2642,6 +2650,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     _selectedStatus = widget.initialStatus;
     _scope = _defaultScope();
     _searchController.addListener(_onSearchChanged);
+    _scrollController.addListener(_onScroll);
     _setupRealtime();
     _loadData();
   }
@@ -2658,6 +2667,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     }
 
     _searchController.dispose();
+    _scrollController.dispose();
     super.dispose();
   }
 
@@ -2719,15 +2729,77 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     });
   }
 
+  void _onScroll() {
+    // kept for dispose — logic moved to NotificationListener
+  }
+
+  bool _handleScrollNotification(ScrollNotification notification) {
+    // Auto-load on scroll only on desktop — mobile uses pull-to-refresh
+    if (!_isDesktop) return false;
+    if (_searchQuery.isNotEmpty) return false;
+    if (_isLoadingMore || !_hasMore) return false;
+    if (notification is ScrollUpdateNotification) {
+      final metrics = notification.metrics;
+      if (metrics.pixels >= metrics.maxScrollExtent) {
+        _loadMore();
+      }
+    }
+    return false;
+  }
+
+  bool get _isDesktop {
+    final width = WidgetsBinding.instance.platformDispatcher.views.first.physicalSize.width /
+        WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+    return width >= 1000;
+  }
+
   void _onSearchChanged() {
     _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 250), () {
+    _debounce = Timer(const Duration(milliseconds: 350), () {
       if (!mounted) return;
-      setState(() {
-        _searchQuery = _searchController.text.trim().toLowerCase();
-        _applyFilters();
-      });
+      final query = _searchController.text.trim().toLowerCase();
+      setState(() => _searchQuery = query);
+      if (query.isEmpty) {
+        setState(() {
+          _searchResults = [];
+          _applyFilters();
+        });
+      } else {
+        _searchServerSide(query);
+      }
     });
+  }
+
+  // ── Shared query builder ─────────────────────────────────────────────────
+  dynamic _baseLeadsQuery() {
+    var q = _supabase.from('leads').select();
+    if (_isSales && _currentUserId.isNotEmpty) {
+      q = q.or('owner_id.eq.$_currentUserId,created_by.eq.$_currentUserId');
+    }
+    return q;
+  }
+
+  // ── Fetch missing profiles and merge into _profileMap ────────────────────
+  Future<void> _fetchMissingProfiles(List<Map<String, dynamic>> rows) async {
+    final needed = <String>{
+      ...rows.map((e) => _text(e['owner_id'])),
+      ...rows.map((e) => _text(e['created_by'])),
+      ...rows.map((e) => _text(e['assigned_by'])),
+    }
+      ..removeWhere((e) => e.isEmpty || _profileMap.containsKey(e));
+
+    if (needed.isEmpty) return;
+
+    final resp = await _supabase
+        .from('profiles')
+        .select('id, full_name, email, role, is_active')
+        .inFilter('id', needed.toList());
+
+    for (final row in resp as List) {
+      final map = Map<String, dynamic>.from(row as Map);
+      final id = _text(map['id']);
+      if (id.isNotEmpty) _profileMap[id] = map;
+    }
   }
 
   Future<void> _loadData({bool silent = false}) async {
@@ -2739,39 +2811,20 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     }
 
     try {
-      final leadsResponse = await _supabase
-          .from('leads')
-          .select()
+      // First page only — more loaded via _loadMore()
+      _currentOffset = 0;
+
+      final leadsResponse = await (_baseLeadsQuery() as dynamic)
           .order('updated_at', ascending: false)
           .order('created_at', ascending: false)
-          .limit(20000);
+          .limit(_pageSize);
 
       final rows = (leadsResponse as List)
           .map((e) => Map<String, dynamic>.from(e as Map))
           .toList();
 
-      final profileIds = <String>{
-        ...rows.map((e) => _text(e['owner_id'])),
-        ...rows.map((e) => _text(e['created_by'])),
-        ...rows.map((e) => _text(e['assigned_by'])),
-      }..removeWhere((e) => e.isEmpty);
-
-      final profileMap = <String, Map<String, dynamic>>{};
-
-      if (profileIds.isNotEmpty) {
-        final profilesResponse = await _supabase
-            .from('profiles')
-            .select('id, full_name, email, role, is_active')
-            .inFilter('id', profileIds.toList());
-
-        for (final row in profilesResponse as List) {
-          final map = Map<String, dynamic>.from(row as Map);
-          final id = _text(map['id']);
-          if (id.isNotEmpty) {
-            profileMap[id] = map;
-          }
-        }
-      }
+      _profileMap = {};
+      await _fetchMissingProfiles(rows);
 
       final assignableResponse = await _supabase
           .from('profiles')
@@ -2787,26 +2840,92 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
       if (!mounted) return;
 
       setState(() {
-        _allLeads = rows;
-        _profileMap = profileMap;
+        _allLeads        = rows;
+        _hasMore         = rows.length == _pageSize;
+        _searchResults   = [];
         _assignableUsers = assignableUsers;
         _applyFilters();
         _isLoading = false;
-        _error = null;
+        _error     = null;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error     = e.toString();
         _isLoading = false;
       });
     }
   }
 
+  // ── Load next page ────────────────────────────────────────────────────────
+  Future<void> _loadMore() async {
+    if (_isLoadingMore || !_hasMore) return;
+    setState(() => _isLoadingMore = true);
+
+    try {
+      final nextOffset = _currentOffset + _pageSize;
+      final response = await (_baseLeadsQuery() as dynamic)
+          .order('updated_at', ascending: false)
+          .order('created_at', ascending: false)
+          .range(nextOffset, nextOffset + _pageSize - 1);
+
+      final newRows = (response as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+
+      await _fetchMissingProfiles(newRows);
+
+      if (!mounted) return;
+      setState(() {
+        _currentOffset = nextOffset;
+        _allLeads      = [..._allLeads, ...newRows];
+        _hasMore       = newRows.length == _pageSize;
+        _isLoadingMore = false;
+        _applyFilters();
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoadingMore = false);
+    }
+  }
+
+  // ── Server-side search (runs on all leads, no pagination limit) ───────────
+  Future<void> _searchServerSide(String query) async {
+    if (query.isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _applyFilters();
+      });
+      return;
+    }
+
+    try {
+      final q = query.toLowerCase();
+      final response = await (_baseLeadsQuery() as dynamic)
+          .or('name.ilike.%$q%,phone.ilike.%$q%,email.ilike.%$q%,company_name.ilike.%$q%,phone2.ilike.%$q%')
+          .order('updated_at', ascending: false);
+
+      final results = (response as List)
+          .map((e) => Map<String, dynamic>.from(e as Map))
+          .toList();
+
+      await _fetchMissingProfiles(results);
+
+      if (!mounted) return;
+      setState(() {
+        _searchResults = results;
+        _applyFilters();
+      });
+    } catch (_) {}
+  }
+
   void _applyFilters() {
     final search = _searchQuery;
+    // When searching, use server-returned results (covers all DB rows).
+    // When not searching, use the paginated _allLeads.
+    final base = search.isNotEmpty ? _searchResults : _allLeads;
 
-    _filteredLeads = _allLeads.where((lead) {
+    _filteredLeads = base.where((lead) {
       if (!_matchesScope(lead)) {
         return false;
       }
@@ -3531,45 +3650,74 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
     }
 
     if (isDesktop) {
-      return RefreshIndicator(
-        onRefresh: _loadData,
-        child: ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
+      final showFooter = _searchQuery.isEmpty && (_hasMore || _isLoadingMore);
+      return NotificationListener<ScrollNotification>(
+        onNotification: _handleScrollNotification,
+        child: ListView.builder(
+          physics: const ClampingScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
-          children: [
-            const _DesktopLeadListHeader(),
-            const SizedBox(height: 8),
-            ..._filteredLeads.map((lead) {
+          itemCount: _filteredLeads.length + 1 + (showFooter ? 1 : 0), // +1 for header
+          itemBuilder: (context, index) {
+            if (index == 0) {
+              return const Column(
+                children: [_DesktopLeadListHeader(), SizedBox(height: 8)],
+              );
+            }
+            final itemIndex = index - 1;
+            if (itemIndex == _filteredLeads.length) {
+              // Footer spinner
               return Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: _DesktopLeadRow(
-                  lead: lead,
-                  ownerLabel: _profileLabel(lead['owner_id']),
-                  canEdit: _canEditLead,
-                  canAssign: _canAssignLeads,
-                  canDelete: _canDeleteLead,
-                  missingFields: _missingFields(lead),
-                  statusColor: _statusColor(_text(lead['status']).toLowerCase()),
-                  onTap: () => _showLeadDetails(lead),
-                  onViewProfile: () => _openCustomerProfile(lead),
-                  onEdit: _canEditLead ? () => _openEditLeadDialog(lead) : null,
-                  onAssign: _canAssignLeads ? () => _openAssignDialog(lead) : null,
-                  onDelete: _canDeleteLead ? () => _deleteLead(lead) : null,
+                padding: const EdgeInsets.symmetric(vertical: 24),
+                child: Center(
+                  child: _isLoadingMore
+                      ? const CircularProgressIndicator()
+                      : const SizedBox.shrink(),
                 ),
               );
-            }),
-          ],
+            }
+            final lead = _filteredLeads[itemIndex];
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: _DesktopLeadRow(
+                lead: lead,
+                ownerLabel: _profileLabel(lead['owner_id']),
+                canEdit: _canEditLead,
+                canAssign: _canAssignLeads,
+                canDelete: _canDeleteLead,
+                missingFields: _missingFields(lead),
+                statusColor: _statusColor(_text(lead['status']).toLowerCase()),
+                onTap: () => _showLeadDetails(lead),
+                onViewProfile: () => _openCustomerProfile(lead),
+                onEdit: _canEditLead ? () => _openEditLeadDialog(lead) : null,
+                onAssign: _canAssignLeads ? () => _openAssignDialog(lead) : null,
+                onDelete: _canDeleteLead ? () => _deleteLead(lead) : null,
+              ),
+            );
+          },
         ),
       );
     }
 
-    return RefreshIndicator(
+    // Show loading indicator at bottom when fetching next page
+    final showFooter = _searchQuery.isEmpty && (_hasMore || _isLoadingMore);
+
+    return NotificationListener<ScrollNotification>(
+      onNotification: _handleScrollNotification,
+      child: RefreshIndicator(
       onRefresh: _loadData,
       child: ListView.builder(
-        physics: const AlwaysScrollableScrollPhysics(),
+        physics: isDesktop ? const ClampingScrollPhysics() : const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(14, 14, 14, 100),
-        itemCount: _filteredLeads.length,
+        itemCount: _filteredLeads.length + (showFooter ? 1 : 0),
         itemBuilder: (context, index) {
+          // Footer spinner while loading next page
+          if (index == _filteredLeads.length) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+
           final lead = _filteredLeads[index];
           return Padding(
             padding: const EdgeInsets.only(bottom: 10),
@@ -3590,6 +3738,7 @@ class _LeadsScreenState extends ConsumerState<LeadsScreen> {
           );
         },
       ),
+    ),
     );
   }
 }
